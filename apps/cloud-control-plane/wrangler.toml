@@ -24,6 +24,6 @@ ALLOWED_ORIGINS = "https://jarvis-omega-control.jarvis-omega-2c17ab.workers.dev,
 # or set the REGISTRATION_INVITE_CODE secret to require an invite code.
 ALLOW_REGISTRATION = "true"
 LONG_POLL_MS = "20000"
-# The dashboard is built by GitHub Actions to GitHub Pages and served from this Worker's origin.
-DASHBOARD_ORIGIN = "https://aryandominant-star.github.io/jarvis-omega"
+# The dashboard is built by GitHub Actions into the `dashboard` branch and served from this Worker's origin.
+DASHBOARD_ORIGIN = "https://raw.githubusercontent.com/aryandominant-star/jarvis-omega/dashboard"
 # Secret (already set in production): MASTER_KEY — 32 random bytes, base64. `wrangler secret put MASTER_KEY`

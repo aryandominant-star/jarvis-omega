@@ -21,8 +21,12 @@ async function proxyDashboard(origin: string, pathname: string, ctx: ExecutionCo
   let res = await fetch(target, { cf: { cacheTtl: 300 } } as RequestInit);
   if (res.status === 404 && !/\.[a-z0-9]+$/i.test(pathname)) res = await fetch(origin.replace(/\/$/, "") + "/index.html");
   const isIndex = !/\/assets\//.test(pathname);
+  // Raw file hosts send text/plain; derive the real type from the extension.
+  const ext = (/\.([a-z0-9]+)$/i.exec(res.url || target)?.[1] ?? "html").toLowerCase();
+  const TYPES: Record<string, string> = { html: "text/html; charset=utf-8", js: "text/javascript; charset=utf-8", css: "text/css; charset=utf-8",
+    svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", webp: "image/webp", ico: "image/x-icon", json: "application/json", woff2: "font/woff2" };
   const out = new Response(res.body, { status: res.status, headers: {
-    "content-type": res.headers.get("content-type") ?? "text/html; charset=utf-8",
+    "content-type": TYPES[ext] ?? "application/octet-stream",
     "cache-control": isIndex ? "no-cache" : "public, max-age=31536000, immutable",
     "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "x-frame-options": "DENY",
   } });

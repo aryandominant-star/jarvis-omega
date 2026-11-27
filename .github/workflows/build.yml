@@ -9,8 +9,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 env:
   API_URL: https://jarvis-omega-control.jarvis-omega-2c17ab.workers.dev
@@ -41,23 +39,25 @@ jobs:
         run: tail -100 /tmp/wrangler.log
 
   dashboard:
-    name: Dashboard → GitHub Pages
+    name: Dashboard → `dashboard` branch (served by the Worker)
     needs: test
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "${{ env.NODE_VERSION }}", cache: npm }
       - run: npm ci
       - run: npm -w @jarvis/web-dashboard run build
-        env: { VITE_API_URL: "${{ env.API_URL }}" }
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with: { path: apps/web-dashboard/dist }
-      - id: deploy
-        uses: actions/deploy-pages@v4
+      - name: Publish build to the dashboard branch
+        run: |
+          cd apps/web-dashboard/dist
+          git init -q -b dashboard
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Dashboard build ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" dashboard
 
   worker:
     name: Control plane → Cloudflare (optional)
