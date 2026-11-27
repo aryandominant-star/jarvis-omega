@@ -84,6 +84,7 @@ jobs:
     name: JARVIS-Setup.exe (Windows)
     needs: test
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -121,7 +122,9 @@ jobs:
       - name: Smoke test — silent install, startup task, agent running, uninstall cleanup
         shell: pwsh
         run: |
-          Start-Process dist/JARVIS-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LOG=install.log" -Wait
+          # Wait for the installer process only (-Wait would also wait for the agent it starts, forever).
+          $p = Start-Process dist/JARVIS-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LOG=install.log" -PassThru
+          if (-not $p.WaitForExit(300000)) { throw "installer timed out" }
           $app = "$env:LOCALAPPDATA\Programs\JARVIS"
           if (-not (Test-Path "$app\app\agent.cjs")) { Get-Content install.log -Tail 50; throw "agent not installed" }
           schtasks /Query /TN "JARVIS OMEGA\Agent" /FO LIST
@@ -131,8 +134,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Get-Content "$env:APPDATA\JARVIS\logs\*.log" -Tail 40; throw "agent not running after install" }
           & "$app\runtime\node.exe" "$app\app\agent.cjs" startup disable; & "$app\runtime\node.exe" "$app\app\agent.cjs" startup status
           & "$app\runtime\node.exe" "$app\app\agent.cjs" startup enable
-          Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
-          Start-Sleep -Seconds 5
+          $u = Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -PassThru
+          $u.WaitForExit(180000) | Out-Null
+          Start-Sleep -Seconds 10   # the uninstaller hands off to a temp copy that finishes removal
           schtasks /Query /TN "JARVIS OMEGA\Agent" 2>$null
           if ($LASTEXITCODE -eq 0) { throw "startup task left behind after uninstall" }
           if (Test-Path "$app\app\agent.cjs") { throw "files left behind after uninstall" }
