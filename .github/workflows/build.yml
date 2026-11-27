@@ -1,0 +1,145 @@
+name: Build, test & ship
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+env:
+  API_URL: https://jarvis-omega-control.jarvis-omega-2c17ab.workers.dev
+  NODE_VERSION: "22"
+
+jobs:
+  test:
+    name: Typecheck + integration & agent e2e tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: npm }
+      - run: npm ci
+      - run: node scripts/build/embed-dashboard.mjs --empty
+      - run: npm run typecheck
+      - name: Start local control plane
+        working-directory: apps/cloud-control-plane
+        run: |
+          echo "MASTER_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")" > .dev.vars
+          npx wrangler d1 migrations apply jarvis-omega --local
+          nohup npx wrangler dev --port 8787 > /tmp/wrangler.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:8787/api/health && break; sleep 1; done
+      - run: node tests/integration/run.mjs
+      - run: node scripts/build/build-agent.mjs
+      - run: node tests/e2e/agent-e2e.mjs
+      - if: failure()
+        run: tail -100 /tmp/wrangler.log
+
+  dashboard:
+    name: Dashboard → GitHub Pages
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: { name: github-pages, url: "${{ steps.deploy.outputs.page_url }}" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: npm }
+      - run: npm ci
+      - run: npm -w @jarvis/web-dashboard run build
+        env: { VITE_API_URL: "${{ env.API_URL }}" }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: apps/web-dashboard/dist }
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  worker:
+    name: Control plane → Cloudflare (optional)
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env: { CLOUDFLARE_API_TOKEN: "${{ secrets.CLOUDFLARE_API_TOKEN }}" }
+    steps:
+      - uses: actions/checkout@v4
+      - if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "::notice::CLOUDFLARE_API_TOKEN secret not set — skipping Worker deploy (see docs/deployment/README.md)."
+      - uses: actions/setup-node@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: npm }
+      - if: env.CLOUDFLARE_API_TOKEN != ''
+        run: |
+          npm ci
+          node scripts/build/embed-dashboard.mjs --empty
+          cd apps/cloud-control-plane
+          npx wrangler d1 migrations apply jarvis-omega --remote
+          npx wrangler deploy
+
+  windows:
+    name: JARVIS-Setup.exe (Windows)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: npm }
+      - run: npm ci
+      - run: node scripts/build/build-agent.mjs
+      - name: Stage self-contained runtime (no Node/Python install needed on user PCs)
+        shell: pwsh
+        run: |
+          $stage = "dist/win"
+          New-Item -ItemType Directory -Force "$stage/runtime" | Out-Null
+          Copy-Item (Get-Command node).Source "$stage/runtime/node.exe"
+          node scripts/build/make-gui-launcher.mjs "$stage/runtime/node.exe" "$stage/runtime/jarvisw.exe"
+          Copy-Item -Recurse dist/app "$stage/app"
+          Push-Location "$stage/app"
+          npm install --omit=dev --no-audit --no-fund
+          Pop-Location
+          $codex = Get-ChildItem -Recurse "$stage/app/node_modules/@openai" -Filter codex.exe | Select-Object -First 1
+          if (-not $codex) { throw "codex.exe missing from runtime" }
+          Write-Host "Codex: $($codex.FullName)"
+          & "$stage/runtime/node.exe" "$stage/app/agent.cjs" version
+      - name: Install Inno Setup if needed
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          $ver = if ($env:GITHUB_REF -like "refs/tags/v*") { $env:GITHUB_REF_NAME.TrimStart("v") } else { "1.0.0" }
+          & $iscc "/DAppVersion=$ver" "/DDefaultApiUrl=$env:API_URL" "/DStage=..\..\dist\win" apps/windows-installer/jarvis.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+          Get-Item dist/JARVIS-Setup.exe | Format-List Name, Length
+      - name: Smoke test — silent install, startup task, agent running, uninstall cleanup
+        shell: pwsh
+        run: |
+          Start-Process dist/JARVIS-Setup.exe -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/LOG=install.log" -Wait
+          $app = "$env:LOCALAPPDATA\Programs\JARVIS"
+          if (-not (Test-Path "$app\app\agent.cjs")) { Get-Content install.log -Tail 50; throw "agent not installed" }
+          schtasks /Query /TN "JARVIS OMEGA\Agent" /FO LIST
+          if ($LASTEXITCODE -ne 0) { throw "startup task not registered" }
+          Start-Sleep -Seconds 12
+          & "$app\runtime\node.exe" "$app\app\agent.cjs" status
+          if ($LASTEXITCODE -ne 0) { Get-Content "$env:APPDATA\JARVIS\logs\*.log" -Tail 40; throw "agent not running after install" }
+          & "$app\runtime\node.exe" "$app\app\agent.cjs" startup disable; & "$app\runtime\node.exe" "$app\app\agent.cjs" startup status
+          & "$app\runtime\node.exe" "$app\app\agent.cjs" startup enable
+          Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
+          Start-Sleep -Seconds 5
+          schtasks /Query /TN "JARVIS OMEGA\Agent" 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "startup task left behind after uninstall" }
+          if (Test-Path "$app\app\agent.cjs") { throw "files left behind after uninstall" }
+          Write-Host "Install → startup task → agent running → uninstall cleanup: OK"
+      - uses: actions/upload-artifact@v4
+        with: { name: JARVIS-Setup, path: dist/JARVIS-Setup.exe }
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with: { files: dist/JARVIS-Setup.exe }

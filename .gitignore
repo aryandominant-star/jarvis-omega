@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+*.log
+build/
+out/
+apps/cloud-control-plane/src/static.ts

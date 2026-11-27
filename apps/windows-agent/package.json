@@ -1,0 +1,21 @@
+{
+  "name": "@jarvis/windows-agent",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "node ../../scripts/build/build-agent.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@openai/codex": "0.172.0",
+    "@playwright/mcp": "0.0.86",
+    "docx": "^9.16.1",
+    "node-notifier": "^10.0.1",
+    "systray2": "^2.1.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,29 @@
+name = "jarvis-omega-control"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+account_id = "2c17abdb176c596c4aa18380995c8e55"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# Workflow scheduler + housekeeping, every minute.
+[triggers]
+crons = ["* * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "jarvis-omega"
+database_id = "ed2f5f85-3987-404a-8da4-7527f83e7833"
+migrations_dir = "migrations"
+
+[vars]
+# Browser origins allowed to call the API (the Worker's own origin is same-origin and always works).
+ALLOWED_ORIGINS = "https://jarvis-omega-control.jarvis-omega-2c17ab.workers.dev,https://aryandominant-star.github.io,http://localhost:5173,http://localhost:4173"
+# Anyone can create an account with a username + password. Set "false" to close sign-ups,
+# or set the REGISTRATION_INVITE_CODE secret to require an invite code.
+ALLOW_REGISTRATION = "true"
+LONG_POLL_MS = "20000"
+# The dashboard is built by GitHub Actions to GitHub Pages and served from this Worker's origin.
+DASHBOARD_ORIGIN = "https://aryandominant-star.github.io/jarvis-omega"
+# Secret (already set in production): MASTER_KEY — 32 random bytes, base64. `wrangler secret put MASTER_KEY`

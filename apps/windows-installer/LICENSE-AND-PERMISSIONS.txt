@@ -1,0 +1,35 @@
+J.A.R.V.I.S. OMEGA — LICENSE AND PERMISSIONS
+
+WHAT THIS SOFTWARE DOES ON THIS COMPUTER
+J.A.R.V.I.S. installs a background agent for your Windows user account only (no administrator rights). When you
+pair this PC with your JARVIS account, people signed in to that account can send it tasks. To carry them out the
+agent can:
+
+  • open and control its own Chrome/Edge browser profile, including signing in to websites with credentials you
+    saved in the JARVIS vault on this PC
+  • open installed applications and bring windows to the front
+  • read and write files ONLY inside the folders you approve (the workspace you choose next, plus any you add)
+  • run commands ONLY if you list them by name in this PC's local policy file
+  • use OpenAI Codex, signed in with your own ChatGPT account, to plan and perform tasks
+  • listen for "Hey Jarvis" with offline Windows speech recognition, only if you enable voice
+
+LIMITS THAT ALWAYS APPLY
+  • The local policy on this PC is the ceiling. The cloud dashboard can narrow permissions but never widen them.
+  • Payments, purchases, sending messages, deleting data, exporting credentials, sharing files outside approved
+    folders, installing software and changing security settings require your explicit approval each time.
+  • JARVIS never bypasses MFA, CAPTCHAs or website access restrictions.
+  • Passwords are encrypted with Windows DPAPI, never sent to the cloud and never shown to the AI model.
+  • Emergency stop (dashboard) and Pause / Disconnect / Exit (tray menu) take effect immediately.
+
+AUTOMATIC STARTUP
+If you enable it, a scheduled task "JARVIS OMEGA\Agent" starts the agent at sign-in, unlock and wake from sleep.
+You can turn it off from the tray menu. Uninstalling removes it.
+
+DATA
+Memory, logs, the credential vault and the browser profile are stored in %APPDATA%\JARVIS on this PC. The cloud
+control plane stores your account, paired devices, tasks, their results and a security log.
+
+LICENSE
+This software is provided "as is", without warranty of any kind. You are responsible for how you use it and for
+complying with the terms of the websites and services you ask it to use. Only pair computers you own or are
+authorised to control.

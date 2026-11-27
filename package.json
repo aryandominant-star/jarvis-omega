@@ -1,0 +1,14 @@
+{
+  "name": "jarvis-omega",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["apps/cloud-control-plane", "apps/web-dashboard", "apps/windows-agent"],
+  "scripts": {
+    "dev:cloud": "npm -w @jarvis/cloud-control-plane run dev",
+    "dev:web": "npm -w @jarvis/web-dashboard run dev",
+    "build:web": "npm -w @jarvis/web-dashboard run build",
+    "build:agent": "npm -w @jarvis/windows-agent run build",
+    "typecheck": "npm -w @jarvis/cloud-control-plane run typecheck && npm -w @jarvis/web-dashboard run typecheck && npm -w @jarvis/windows-agent run typecheck",
+    "test": "node --test tests/unit/ && node tests/integration/run.mjs"
+  }
+}
