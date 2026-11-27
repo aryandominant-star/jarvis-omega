@@ -144,7 +144,16 @@ jobs:
           exit 0   # the last schtasks query is expected to fail; don't let its exit code fail the step
       - uses: actions/upload-artifact@v4
         with: { name: JARVIS-Setup, path: dist/JARVIS-Setup.exe }
-      - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish release (download link for users)
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
-        with: { files: dist/JARVIS-Setup.exe }
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          target_commitish: ${{ github.sha }}
+          name: J.A.R.V.I.S. OMEGA ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          make_latest: true
+          files: dist/JARVIS-Setup.exe
+          body: |
+            **Install:** download `JARVIS-Setup.exe` below and run it (no admin rights needed).
+            Command center: ${{ env.API_URL }} — create an account, then Devices → Generate pairing code, and enter it in the installer.
+            Windows SmartScreen may warn because the installer is not code-signed yet: choose "More info → Run anyway".
