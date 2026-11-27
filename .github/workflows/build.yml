@@ -141,6 +141,7 @@ jobs:
           if ($LASTEXITCODE -eq 0) { throw "startup task left behind after uninstall" }
           if (Test-Path "$app\app\agent.cjs") { throw "files left behind after uninstall" }
           Write-Host "Install → startup task → agent running → uninstall cleanup: OK"
+          exit 0   # the last schtasks query is expected to fail; don't let its exit code fail the step
       - uses: actions/upload-artifact@v4
         with: { name: JARVIS-Setup, path: dist/JARVIS-Setup.exe }
       - name: Publish release
