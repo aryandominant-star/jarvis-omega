@@ -21,6 +21,14 @@ export interface LocalPolicy {
   codexSandbox: "workspace-write" | "read-only";
   codexModel?: string;
   rea: { enabled: boolean; command?: string; args?: string[]; url?: string };
+  // v1.1 capabilities — each is a ceiling the cloud can narrow but never widen.
+  provider: "codex" | "claude";
+  anthropicModel?: string;
+  power: boolean;                        // allow shutdown/restart/sleep/lock
+  terminal: "off" | "scoped" | "full";   // off = no terminal; scoped = inside approved dirs; full = unrestricted shell
+  screen: boolean;                       // allow screen capture / view
+  messenger: boolean;                    // allow showing messages on screen
+  terminalTimeoutSec: number;
 }
 
 export function defaultPolicy(home: string): LocalPolicy {
@@ -39,6 +47,12 @@ export function defaultPolicy(home: string): LocalPolicy {
     taskTimeoutMin: 45,
     codexSandbox: "workspace-write",
     rea: { enabled: false },
+    provider: "codex",
+    power: true,
+    terminal: "scoped",
+    screen: true,
+    messenger: true,
+    terminalTimeoutSec: 120,
   };
 }
 
@@ -65,6 +79,18 @@ export interface EffectivePermissions {
   allowNetworkInSandbox: boolean;
   voice: boolean;
   rea: boolean;
+  power: boolean;
+  terminal: "off" | "scoped" | "full";
+  screen: boolean;
+  messenger: boolean;
+  provider: "codex" | "claude";
+  terminalTimeoutSec: number;
+}
+
+/** Terminal access is the minimum (most restrictive) of local and cloud. */
+function minTerminal(local: "off" | "scoped" | "full", cloud: "off" | "scoped" | "full"): "off" | "scoped" | "full" {
+  const rank = { off: 0, scoped: 1, full: 2 } as const;
+  return rank[local] <= rank[cloud] ? local : cloud;
 }
 
 /** Intersect the cloud profile with the local ceiling. */
@@ -101,6 +127,12 @@ export function effectivePermissions(cloud: Partial<PermissionProfile> | null, l
     allowNetworkInSandbox: local.allowNetworkInSandbox && c.allowNetworkInSandbox,
     voice: local.voice && c.voice,
     rea: local.rea.enabled && c.rea,
+    power: local.power && c.power,
+    terminal: minTerminal(local.terminal, c.terminal ?? "off"),
+    screen: local.screen && c.screen,
+    messenger: local.messenger && c.messenger,
+    provider: local.provider,
+    terminalTimeoutSec: local.terminalTimeoutSec,
   };
 }
 
@@ -135,4 +167,5 @@ export const HIGH_RISK_ACTIONS = [
   "sending an email, message or post on the user's behalf",
   "installing software or privileged services",
   "changing account security settings or access permissions",
+  "shutting down or restarting a computer",
 ];

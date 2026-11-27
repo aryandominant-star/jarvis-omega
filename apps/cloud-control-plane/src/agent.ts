@@ -182,7 +182,7 @@ export async function sync(req: Request, env: Env, ctx: ExecutionContext): Promi
 // ---------------- task updates from the agent ----------------
 export async function taskUpdate(req: Request, env: Env, taskId: string) {
   const bodyText = await req.text();
-  if (bodyText.length > 256 * 1024) throw new HttpError(413, "Update too large");
+  if (bodyText.length > 512 * 1024) throw new HttpError(413, "Update too large");
   const dev = await requireDevice(req, env, bodyText, "req");
   const body = safeParse<AgentTaskUpdate>(bodyText, {});
   const task = await env.DB.prepare("SELECT * FROM tasks WHERE id = ? AND device_id = ?").bind(taskId, dev.id).first<any>();
@@ -213,7 +213,7 @@ export async function taskUpdate(req: Request, env: Env, taskId: string) {
     vals.push(body.pendingInput ? JSON.stringify({ ...body.pendingInput, requestedAt: t }) : null);
     if (body.pendingInput) await addEvent(env, taskId, "input_request", body.pendingInput as any);
   }
-  if (typeof body.result === "string") { sets.push("result = ?"); vals.push(body.result.slice(0, 60000)); }
+  if (typeof body.result === "string") { sets.push("result = ?"); vals.push(body.result.slice(0, 400000)); }
   if (typeof body.error === "string") { sets.push("error = ?"); vals.push(body.error.slice(0, 4000)); }
   if (typeof body.threadId === "string") { sets.push("thread_id = ?"); vals.push(body.threadId.slice(0, 100)); }
 

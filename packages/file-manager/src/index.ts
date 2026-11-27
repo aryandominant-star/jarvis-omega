@@ -61,3 +61,51 @@ export function listDir(dir: string, limit = 300) {
     name: e.name, type: e.isDirectory() ? "dir" : "file",
   }));
 }
+
+const MAX_TRANSFER = 180 * 1024; // keep a single control-task result within D1 / request limits
+
+/** Read a file's raw bytes as base64 for download. Caps at MAX_TRANSFER. */
+export function readFileBase64(file: string): { name: string; size: number; base64: string; truncated: boolean } {
+  const st = fs.statSync(file);
+  if (!st.isFile()) throw new Error("Not a file");
+  if (st.size > MAX_TRANSFER) throw new Error(`File is ${(st.size / 1024).toFixed(0)} KB; downloads are limited to ${MAX_TRANSFER / 1024} KB in this version`);
+  const buf = fs.readFileSync(file);
+  return { name: path.basename(file), size: st.size, base64: buf.toString("base64"), truncated: false };
+}
+
+/** Write base64 bytes pushed from the dashboard into an approved directory. */
+export function writeFileBase64(dir: string, name: string, base64: string): { path: string; size: number } {
+  const safe = path.basename(name).replace(/[<>:"/\\|?*\x00-\x1f]/g, "_") || "upload.bin";
+  const buf = Buffer.from(base64, "base64");
+  if (buf.length > MAX_TRANSFER) throw new Error(`Uploads are limited to ${MAX_TRANSFER / 1024} KB in this version`);
+  fs.mkdirSync(dir, { recursive: true });
+  const dest = path.join(dir, safe);
+  fs.writeFileSync(dest, buf);
+  return { path: dest, size: buf.length };
+}
+
+/** Delete a file or (recursively) a directory. Returns how many entries were removed. */
+export function deletePath(target: string): { removed: number; isDir: boolean } {
+  const st = fs.statSync(target);
+  if (st.isDirectory()) {
+    let count = 0;
+    const walk = (d: string) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else count++; } };
+    try { walk(target); } catch { /* best-effort count */ }
+    fs.rmSync(target, { recursive: true, force: true });
+    return { removed: count, isDir: true };
+  }
+  fs.rmSync(target, { force: true });
+  return { removed: 1, isDir: false };
+}
+
+/** Count files under a path without deleting — used to decide if a delete needs confirmation. */
+export function countEntries(target: string): number {
+  try {
+    const st = fs.statSync(target);
+    if (!st.isDirectory()) return 1;
+    let count = 0;
+    const walk = (d: string) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else count++; if (count > 9999) return; } };
+    walk(target);
+    return count;
+  } catch { return 0; }
+}

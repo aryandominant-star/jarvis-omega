@@ -115,10 +115,12 @@ jobs:
         run: |
           $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
           if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
-          $ver = if ($env:GITHUB_REF -like "refs/tags/v*") { $env:GITHUB_REF_NAME.TrimStart("v") } else { "1.0.0" }
+          $ver = if ($env:GITHUB_REF -like "refs/tags/v*") { $env:GITHUB_REF_NAME.TrimStart("v") } else { "1.1.0" }
           & $iscc "/DAppVersion=$ver" "/DDefaultApiUrl=$env:API_URL" "/DStage=..\..\dist\win" apps/windows-installer/jarvis.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
-          Get-Item dist/JARVIS-Setup.exe | Format-List Name, Length
+          & $iscc "/DAppVersion=$ver" apps/windows-installer/cleaner.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC (cleaner) failed" }
+          Get-Item dist/JARVIS-Setup.exe, dist/JARVIS-Uninstall.exe | Format-List Name, Length
       - name: Smoke test — silent install, startup task, agent running, uninstall cleanup
         shell: pwsh
         run: |
@@ -143,17 +145,26 @@ jobs:
           Write-Host "Install → startup task → agent running → uninstall cleanup: OK"
           exit 0   # the last schtasks query is expected to fail; don't let its exit code fail the step
       - uses: actions/upload-artifact@v4
-        with: { name: JARVIS-Setup, path: dist/JARVIS-Setup.exe }
+        with:
+          name: JARVIS-installers
+          path: |
+            dist/JARVIS-Setup.exe
+            dist/JARVIS-Uninstall.exe
       - name: Publish release (download link for users)
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.1.0' }}
           target_commitish: ${{ github.sha }}
-          name: J.A.R.V.I.S. OMEGA ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          name: J.A.R.V.I.S. OMEGA ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.1.0' }}
           make_latest: true
-          files: dist/JARVIS-Setup.exe
+          files: |
+            dist/JARVIS-Setup.exe
+            dist/JARVIS-Uninstall.exe
           body: |
-            **Install:** download `JARVIS-Setup.exe` below and run it (no admin rights needed).
-            Command center: ${{ env.API_URL }} — create an account, then Devices → Generate pairing code, and enter it in the installer.
-            Windows SmartScreen may warn because the installer is not code-signed yet: choose "More info → Run anyway".
+            **Two files below:**
+            - `JARVIS-Setup.exe` — the app (no admin rights needed). Create an account at ${{ env.API_URL }}, then Devices → Generate pairing code, and enter it in the installer.
+            - `JARVIS-Uninstall.exe` — standalone cleaner; stops the agent, removes startup, deletes app + all local data.
+
+            New in 1.1: remote power (shutdown/restart/sleep/lock), terminal, on-screen messenger, file download/upload/delete, screen view (with on-screen indicator), and Claude as an alternative brain. JARVIS acts on routine things without asking; it still confirms the handful of irreversible ones.
+            Windows SmartScreen may warn (not code-signed yet): "More info → Run anyway".

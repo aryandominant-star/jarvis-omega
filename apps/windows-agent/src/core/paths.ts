@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const AGENT_VERSION = "1.0.0";
+export const AGENT_VERSION = "1.1.0";
 export const IS_WIN = process.platform === "win32";
 
 /** Per-user data directory: %APPDATA%\JARVIS (Windows) or ~/.jarvis-omega (dev on other OSes). */

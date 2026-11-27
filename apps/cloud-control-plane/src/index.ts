@@ -53,7 +53,9 @@ function serveStatic(pathname: string): Response {
   });
 }
 
-const CONTROL_ACTIONS = new Set(["memory.list", "memory.add", "memory.delete", "apps.list", "apps.refresh", "files.search", "system.info"]);
+const CONTROL_ACTIONS = new Set(["memory.list", "memory.add", "memory.delete", "apps.list", "apps.refresh", "files.search",
+  "files.list", "files.read", "files.delete", "files.fetch", "files.put", "message.show", "terminal.exec",
+  "power.shutdown", "power.restart", "power.sleep", "power.lock", "power.cancel", "screen.capture", "system.info"]);
 
 function corsHeaders(req: Request, env: Env): Record<string, string> {
   const origin = req.headers.get("origin");

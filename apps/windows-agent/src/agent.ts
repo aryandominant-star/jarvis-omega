@@ -9,7 +9,7 @@ import { buildTaskPrompt, codexLogin, codexLoginStatus, PERSONA, resolveCodexBin
 import { BrowserManager } from "../../../packages/browser-controller/src/index";
 import { Vault } from "../../../packages/credential-vault/src/index";
 import { CloudClient, CloudError } from "../../../packages/device-manager/src/index";
-import { readTextFile, searchFiles } from "../../../packages/file-manager/src/index";
+import { countEntries, deletePath, listDir, readFileBase64, readTextFile, searchFiles, writeFileBase64 } from "../../../packages/file-manager/src/index";
 import { Memory } from "../../../packages/memory/src/index";
 import { effectivePermissions, isAppAllowed, isPathAllowed, type EffectivePermissions, type LocalPolicy } from "../../../packages/permissions/src/index";
 import { REA_INSTRUCTIONS, reaMcpServer } from "../../../packages/rea-integration/src/index";
@@ -17,9 +17,14 @@ import { backoff, inQuietHours, LocalMonitors } from "../../../packages/task-sch
 import { spokenSummary, VoiceEngine } from "../../../packages/voice-engine/src/index";
 import { exportReport } from "../../../packages/web-research/src/index";
 import {
-  batteryStatus, collectMetrics, discoverApps, focusWindow, isWorkstationLocked, killTree, launchApp, listWindows,
-  logonKey, setStartupEnabled, startupStatus, toast, userNotificationState,
+  batteryStatus, cancelPower, captureScreen, collectMetrics, discoverApps, focusWindow, isWorkstationLocked, killTree,
+  launchApp, listWindows, logonKey, powerAction, screenIndicator, setStartupEnabled, showMessage, startupStatus, toast, userNotificationState,
 } from "../../../packages/windows-automation/src/index";
+import { runTerminal } from "./core/terminal";
+import { runClaude } from "../../../packages/agent-brain/src/claude";
+import { TOOLS as CLAUDE_TOOLS } from "./mcp-server";
+
+const safeParseJson = (s: string | null): any[] => { try { return s ? JSON.parse(s) : []; } catch { return []; } };
 import { Tray, type TrayAction } from "../../windows-tray/src/tray";
 import { clearDeviceSecret, loadConfig, loadDeviceSecret, loadPolicy, loadState, saveConfig, saveState, type AgentConfig } from "./core/config";
 import { ensureIpcToken, startIpcServer } from "./core/ipc";
@@ -216,6 +221,11 @@ export class Agent {
       desktop: !this.locked,
       vault: Vault.available(),
       rea: this.perms.rea,
+      power: this.perms.power,
+      terminal: this.perms.terminal,
+      screen: this.perms.screen,
+      messenger: this.perms.messenger,
+      provider: this.perms.provider,
     };
   }
 
@@ -380,12 +390,86 @@ export class Agent {
     else if (act === "apps.list") out = this.memory.apps();
     else if (act === "apps.refresh") { await this.refreshApps(); out = { count: this.memory.apps().length }; }
     else if (act === "files.search") out = searchFiles(String(a.query ?? ""), this.perms.approvedDirs);
-    else if (act === "system.info") out = { ...collectMetrics(this.battery?.onBattery ?? null), battery: this.battery, locked: this.locked, codex: this.codex };
+    else if (act === "files.list") out = this.controlListDir(String(a.path ?? this.perms.workspaceDir));
+    else if (act === "files.read") out = this.controlRead(String(a.path ?? ""));
+    else if (act === "files.fetch") out = this.controlFetch(String(a.path ?? ""));
+    else if (act === "files.put") out = this.controlPut(String(a.dir ?? this.perms.workspaceDir), String(a.name ?? "upload.bin"), String(a.base64 ?? ""));
+    else if (act === "files.delete") out = await this.controlDelete(String(a.path ?? ""), a.confirmed === true);
+    else if (act === "message.show") out = await this.controlMessage(String(a.title ?? "JARVIS"), String(a.body ?? ""));
+    else if (act === "terminal.exec") out = await this.controlTerminal(String(a.command ?? ""), a.cwd ? String(a.cwd) : undefined);
+    else if (act === "screen.capture") out = await this.controlScreen();
+    else if (act?.startsWith("power.")) out = await this.controlPower(act);
+    else if (act === "system.info") out = { ...collectMetrics(this.battery?.onBattery ?? null), battery: this.battery, locked: this.locked, codex: this.codex, provider: this.perms.provider };
     else throw new Error(`Unknown control action ${act}`);
     await this.finish(run, "COMPLETED", JSON.stringify(out), null);
   }
 
+  // ---- control-action implementations (dashboard-initiated; the click is the human's authorisation) ----
+  private controlListDir(p: string) {
+    const dir = path.resolve(p);
+    if (!isPathAllowed(dir, this.perms)) throw new Error("That folder is outside the approved directories");
+    return { path: dir, entries: listDir(dir) };
+  }
+  private controlRead(p: string) {
+    const f = path.resolve(p);
+    if (!isPathAllowed(f, this.perms)) throw new Error("That file is outside the approved directories");
+    return { path: f, ...readTextFile(f) };
+  }
+  private controlFetch(p: string) {
+    const f = path.resolve(p);
+    if (!isPathAllowed(f, this.perms)) throw new Error("That file is outside the approved directories");
+    return readFileBase64(f);
+  }
+  private controlPut(dir: string, name: string, base64: string) {
+    const d = path.resolve(dir);
+    if (!isPathAllowed(d, this.perms)) throw new Error("That folder is outside the approved directories");
+    const r = writeFileBase64(d, name, base64);
+    return { ...r, message: `Uploaded ${name} (${Math.round(r.size / 1024)} KB) to ${d}` };
+  }
+  private async controlDelete(p: string, confirmed: boolean) {
+    const f = path.resolve(p);
+    if (!isPathAllowed(f, this.perms)) throw new Error("That path is outside the approved directories");
+    const n = countEntries(f);
+    // Deleting a lot is irreversible — require an explicit confirmed flag (the dashboard asks first).
+    if (n > 20 && !confirmed) {
+      return { needsConfirm: true, count: n, path: f, message: `This would delete ${n} files. Confirm to proceed.` };
+    }
+    return { ...deletePath(f), message: `Deleted ${f}` };
+  }
+  private async controlMessage(title: string, body: string) {
+    if (!this.perms.messenger) throw new Error("Messenger is disabled on this PC");
+    if (this.locked) throw new Error("The screen is locked; the message will not be visible");
+    await showMessage(title.slice(0, 80), body.slice(0, 1000));
+    return { shown: true };
+  }
+  private async controlTerminal(command: string, cwd?: string) {
+    if (this.perms.terminal === "off") throw new Error("The terminal is disabled on this PC");
+    const r = await runTerminal(command, this.perms, { cwd });
+    return r;
+  }
+  private async controlScreen() {
+    if (!this.perms.screen) throw new Error("Screen view is disabled on this PC");
+    if (this.locked) throw new Error("The screen is locked");
+    await screenIndicator();
+    const base64 = await captureScreen();
+    return { base64, mime: "image/png", capturedAt: Date.now() };
+  }
+  private async controlPower(act: string) {
+    if (!this.perms.power) throw new Error("Power control is disabled on this PC");
+    if (act === "power.cancel") return { cancelled: await cancelPower() };
+    const action = act.slice("power.".length) as "shutdown" | "restart" | "sleep" | "lock";
+    if (action === "shutdown" || action === "restart") {
+      await powerAction(action, 60);
+      this.notify("security", action === "restart" ? "Restarting" : "Shutting down",
+        `This PC will ${action} in 60 seconds. Run "shutdown /a" or use the dashboard to cancel.`);
+      return { action, graceSec: 60, message: `${action} scheduled in 60s (cancellable).` };
+    }
+    await powerAction(action, 0);
+    return { action, message: `${action} now.` };
+  }
+
   private async runAgentTask(run: Running) {
+    if (this.perms.provider === "claude") return this.runClaudeTask(run);
     const t = run.task;
     if (!this.codexBin || this.codex === "missing") return this.finish(run, "FAILED", null, "Codex is not installed on this PC. Reinstall JARVIS.");
     if (this.codex !== "ready") {
@@ -453,6 +537,37 @@ export class Agent {
       }
       return this.finish(run, "FAILED", null, /login|auth|401|unauthori/i.test(err) ? `Codex sign-in problem: ${err}. Use “Connect Codex” in the tray.` : err);
     }
+  }
+
+  /** Alternative brain: Claude via the Anthropic API, using the jarvis tools (no browser automation in this version). */
+  private async runClaudeTask(run: Running) {
+    const t = run.task;
+    const apiKey = process.env.ANTHROPIC_API_KEY || (await this.vault.forHost("anthropic.com").then((c) => c?.password).catch(() => null));
+    if (!apiKey) return this.finish(run, "FAILED", null, "No Anthropic API key. Add one in the JARVIS credential vault (domain anthropic.com, any username) or set ANTHROPIC_API_KEY, or switch this PC's provider back to Codex.");
+    this.setStatus(run, "PLANNING");
+    this.locked = await isWorkstationLocked();
+    const recent = this.memory.recentTasks(5).map((r) => ({ prompt: r.prompt, summary: r.summary, state: r.state, finishedAt: r.finishedAt }));
+    const memories = [...this.memory.list("preference", 15), ...this.memory.search(t.prompt, 8)]
+      .filter((m, i, arr) => arr.findIndex((x) => x.id === m.id) === i).map((m) => ({ category: m.category, content: m.content }));
+    const fullPrompt = buildTaskPrompt(t.prompt, {
+      deviceName: this.cfg.deviceName, otherDevices: [], perms: this.perms, memories, recent, desktopAvailable: !this.locked, source: t.source,
+    });
+    const tools = CLAUDE_TOOLS.map((x) => ({ name: x.name, description: x.description, input_schema: x.inputSchema }));
+    const history = t.threadId ? safeParseJson(this.memory.get(`claude_thread:${t.threadId}`)) : [];
+    const threadId = t.threadId ?? `cl_${Date.now().toString(36)}`;
+    this.report(run.task.id, { threadId });
+    this.setStatus(run, "RUNNING");
+    const r = await runClaude({
+      apiKey, model: this.policy.anthropicModel || "claude-opus-4-8", system: PERSONA, prompt: fullPrompt, history: history ?? [], tools,
+      runTool: (name, args) => this.runTool(run.task.id, name, args).then((v) => typeof v === "string" ? v : JSON.stringify(v)),
+      onEvent: (ev) => { const { type, ...data } = ev; run.events.push({ type: type as any, data }); this.flushEvents(run); },
+      isCancelled: () => run.cancelled,
+    });
+    this.memory.set(`claude_thread:${threadId}`, JSON.stringify(r.history.slice(-40)));
+    if (run.cancelled) return this.finish(run, "CANCELLED", null, "Cancelled");
+    if (r.failed) return this.finish(run, "FAILED", null, r.failed);
+    this.setStatus(run, "VALIDATING");
+    return this.finish(run, "COMPLETED", r.finalMessage ?? "Done.", null);
   }
 
   private onCodexEvent(run: Running, ev: any) {
@@ -580,6 +695,57 @@ export class Agent {
         await needConfirm(`Run ${cmd.name}`, `${cmd.command} ${(cmd.args ?? []).join(" ")}`);
         run.sideEffects = true;
         return await runAllowlisted(cmd, run);
+      }
+      case "run_terminal": {
+        if (this.perms.terminal === "off") throw new Error("The terminal is disabled on this PC (local policy).");
+        const r = await runTerminal(String(a.command ?? ""), this.perms, { cwd: a.cwd ? String(a.cwd) : undefined });
+        run.sideEffects = true;
+        return `[exit ${r.exitCode}${r.timedOut ? ", timed out" : ""}] (cwd ${r.cwd})\n${r.output}`;
+      }
+      case "send_message": {
+        if (!this.perms.messenger) throw new Error("Messenger is disabled on this PC");
+        if (this.locked) return "The screen is locked; the message was not shown.";
+        await showMessage(String(a.title ?? "JARVIS").slice(0, 80), String(a.body ?? "").slice(0, 1000));
+        return "Message shown on the screen.";
+      }
+      case "power_control": {
+        if (!this.perms.power) throw new Error("Power control is disabled on this PC");
+        const action = String(a.action ?? "");
+        if (!["shutdown", "restart", "sleep", "lock", "cancel"].includes(action)) throw new Error("action must be shutdown, restart, sleep, lock or cancel");
+        if (action === "cancel") return (await cancelPower()) ? "Pending shutdown cancelled." : "Nothing to cancel.";
+        if (action === "shutdown" || action === "restart") {
+          const r = await this.askUser(run, { kind: "confirmation", action: `${action} ${this.cfg.deviceName}`, details: "Unsaved work on that PC could be lost. There is a 60-second cancel window.", risk: "high" });
+          if (!r.approved) return "DENIED. Power action not performed.";
+          await powerAction(action as any, 60);
+          run.sideEffects = true;
+          return `${action} scheduled in 60 seconds (cancellable with power_control cancel or shutdown /a).`;
+        }
+        await powerAction(action as any, 0);
+        return `${action} done.`;
+      }
+      case "screen_capture": {
+        if (!this.perms.screen) throw new Error("Screen view is disabled on this PC");
+        if (this.locked) throw new Error("The screen is locked");
+        await screenIndicator();
+        const base64 = await captureScreen();
+        const dir = path.join(this.perms.workspaceDir, ".screens");
+        fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, `shot-${Date.now()}.png`);
+        fs.writeFileSync(file, Buffer.from(base64, "base64"));
+        run.sideEffects = true;
+        return `Screenshot saved to ${file} (${Math.round(base64.length * 0.75 / 1024)} KB). Read or analyse it from there.`;
+      }
+      case "delete_path": {
+        const p = path.resolve(String(a.path ?? ""));
+        if (!isPathAllowed(p, this.perms)) throw new Error("That path is outside the approved directories");
+        const n = countEntries(p);
+        if (n > 20) {
+          const r = await this.askUser(run, { kind: "confirmation", action: `Delete ${n} files under ${p}`, details: "This cannot be undone.", risk: "high" });
+          if (!r.approved) return "DENIED. Nothing deleted.";
+        }
+        const d = deletePath(p);
+        run.sideEffects = true;
+        return `Deleted ${p} (${d.removed} file${d.removed === 1 ? "" : "s"}).`;
       }
       case "memory_search": return this.memory.search(String(a.query), 10).map((m) => `[${m.category}] ${m.content}`).join("\n") || "Nothing relevant in memory.";
       case "memory_save": { const m = this.memory.add(String(a.category), String(a.content)); return `Remembered (#${m.id}).`; }

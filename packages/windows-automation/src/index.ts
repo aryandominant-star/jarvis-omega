@@ -276,3 +276,79 @@ export function killTree(pid: number) {
     try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
   }
 }
+
+// ---------------- power control ----------------
+import { execFile as _execFile } from "node:child_process";
+import type { PowerAction } from "../../shared-types/src/index";
+
+/**
+ * Shutdown / restart with a grace window so the person at the PC can cancel (`shutdown /a`).
+ * Sleep and lock take effect immediately (both are safely reversible).
+ */
+export async function powerAction(action: PowerAction, graceSec = 60, reason = "Requested from your JARVIS dashboard"): Promise<void> {
+  if (!IS_WIN) throw new Error("Power control is only available on Windows");
+  if (action === "lock") {
+    await new Promise<void>((res, rej) => _execFile("rundll32.exe", ["user32.dll,LockWorkStation"], { windowsHide: true }, (e) => (e ? rej(e) : res())));
+    return;
+  }
+  if (action === "sleep") {
+    // false,false = sleep (not hibernate), do not force.
+    await new Promise<void>((res, rej) => _execFile("rundll32.exe", ["powrprof.dll,SetSuspendState", "0,1,0"], { windowsHide: true }, (e) => (e ? rej(e) : res())));
+    return;
+  }
+  const flag = action === "restart" ? "/r" : "/s";
+  await new Promise<void>((res, rej) =>
+    _execFile("shutdown.exe", [flag, "/t", String(Math.max(0, Math.round(graceSec))), "/c", reason.slice(0, 120)], { windowsHide: true }, (e) => (e ? rej(e) : res()))
+  );
+}
+
+/** Abort a pending shutdown/restart started within its grace window. */
+export async function cancelPower(): Promise<boolean> {
+  if (!IS_WIN) return false;
+  return new Promise((res) => _execFile("shutdown.exe", ["/a"], { windowsHide: true }, (e) => res(!e)));
+}
+
+// ---------------- on-screen messenger ----------------
+/** Pop a non-blocking message window on the interactive desktop. Returns immediately. */
+export async function showMessage(title: string, body: string): Promise<void> {
+  if (!IS_WIN) return;
+  const script =
+    `Add-Type -AssemblyName System.Windows.Forms,System.Drawing;` +
+    `$f=New-Object Windows.Forms.Form;$f.Text=${psq(title)};$f.Size=New-Object Drawing.Size(460,230);` +
+    `$f.StartPosition='CenterScreen';$f.TopMost=$true;$f.BackColor=[Drawing.Color]::FromArgb(6,12,22);$f.ForeColor=[Drawing.Color]::FromArgb(220,246,255);` +
+    `$f.FormBorderStyle='FixedDialog';$f.MaximizeBox=$false;$f.MinimizeBox=$false;` +
+    `$h=New-Object Windows.Forms.Label;$h.Text=${psq(title)};$h.Font=New-Object Drawing.Font('Segoe UI',14,[Drawing.FontStyle]::Bold);$h.ForeColor=[Drawing.Color]::FromArgb(0,229,255);$h.AutoSize=$true;$h.Location='20,16';$f.Controls.Add($h);` +
+    `$l=New-Object Windows.Forms.Label;$l.Text=${psq(body)};$l.Font=New-Object Drawing.Font('Segoe UI',11);$l.Location='22,56';$l.Size=New-Object Drawing.Size(410,110);$f.Controls.Add($l);` +
+    `$b=New-Object Windows.Forms.Button;$b.Text='Dismiss';$b.Location='350,160';$b.FlatStyle='Flat';$b.ForeColor=[Drawing.Color]::White;$b.Add_Click({$f.Close()});$f.Controls.Add($b);` +
+    `$f.Add_Shown({$f.Activate()});[void]$f.ShowDialog()`;
+  // Fire and forget — do not await ShowDialog (it blocks until dismissed).
+  ps(script, 3600_000).catch(() => undefined);
+}
+
+// ---------------- screen capture ----------------
+/** Capture the virtual screen to a PNG and return it base64-encoded. Shows a brief on-screen indicator first. */
+export async function captureScreen(maxWidth = 1280): Promise<string> {
+  if (!IS_WIN) throw new Error("Screen capture is only available on Windows");
+  const script =
+    `Add-Type -AssemblyName System.Windows.Forms,System.Drawing;` +
+    `$b=[Windows.Forms.SystemInformation]::VirtualScreen;` +
+    `$bmp=New-Object Drawing.Bitmap($b.Width,$b.Height);` +
+    `$g=[Drawing.Graphics]::FromImage($bmp);$g.CopyFromScreen($b.Location,[Drawing.Point]::Empty,$b.Size);` +
+    `$mw=${Math.round(maxWidth)};if($bmp.Width -gt $mw){$nh=[int]($bmp.Height*$mw/$bmp.Width);$r=New-Object Drawing.Bitmap($mw,$nh);$g2=[Drawing.Graphics]::FromImage($r);$g2.DrawImage($bmp,0,0,$mw,$nh);$bmp.Dispose();$bmp=$r}` +
+    `$ms=New-Object IO.MemoryStream;$bmp.Save($ms,[Drawing.Imaging.ImageFormat]::Png);` +
+    `[Console]::Out.Write([Convert]::ToBase64String($ms.ToArray()))`;
+  return ps(script, 30_000);
+}
+
+/** Briefly flash a small "JARVIS is viewing this screen" banner, so capture is never silent. */
+export async function screenIndicator(): Promise<void> {
+  if (!IS_WIN) return;
+  const script =
+    `Add-Type -AssemblyName System.Windows.Forms,System.Drawing;` +
+    `$f=New-Object Windows.Forms.Form;$f.FormBorderStyle='None';$f.BackColor=[Drawing.Color]::Black;$f.TransparencyKey=[Drawing.Color]::Black;` +
+    `$f.TopMost=$true;$f.ShowInTaskbar=$false;$f.StartPosition='Manual';$f.Size=New-Object Drawing.Size(360,44);` +
+    `$wa=[Windows.Forms.Screen]::PrimaryScreen.WorkingArea;$f.Location=New-Object Drawing.Point($wa.Right-376,$wa.Top+16);` +
+    `$l=New-Object Windows.Forms.Label;$l.Text=' ● JARVIS is viewing this screen';$l.ForeColor=[Drawing.Color]::FromArgb(0,229,255);$l.BackColor=[Drawing.Color]::FromArgb(10,20,36);$l.Font=New-Object Drawing.Font('Segoe UI',10,[Drawing.FontStyle]::Bold);$l.Dock='Fill';$l.TextAlign='MiddleLeft';$f.Controls.Add($l);` +
+    `$t=New-Object Windows.Forms.Timer;$t.Interval=2500;$t.Add_Tick({$f.Close()});$t.Start();[void]$f.ShowDialog()`;
+  ps(script, 10_000).catch(() => undefined);
+}

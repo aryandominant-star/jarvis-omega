@@ -38,7 +38,22 @@ export type ControlAction =
   | "apps.list"
   | "apps.refresh"
   | "files.search"
+  | "files.list"
+  | "files.read"
+  | "files.delete"
+  | "files.fetch"       // stage a file's bytes back to the dashboard (download)
+  | "files.put"         // write bytes pushed from the dashboard (upload)
+  | "message.show"      // pop a message on the PC's screen
+  | "terminal.exec"     // run one command, return output
+  | "power.shutdown"
+  | "power.restart"
+  | "power.sleep"
+  | "power.lock"
+  | "power.cancel"      // cancel a pending shutdown/restart within its grace window
+  | "screen.capture"    // single screenshot (with on-screen indicator)
   | "system.info";
+
+export type PowerAction = "shutdown" | "restart" | "sleep" | "lock";
 
 export interface Task {
   id: string;
@@ -95,6 +110,11 @@ export interface DeviceCapabilities {
   desktop: boolean; // interactive desktop available (unlocked session)
   vault: boolean;
   rea: boolean;
+  power: boolean;
+  terminal: "off" | "scoped" | "full";
+  screen: boolean;
+  messenger: boolean;
+  provider: "codex" | "claude";
 }
 
 export interface PermissionProfile {
@@ -107,6 +127,10 @@ export interface PermissionProfile {
   allowNetworkInSandbox: boolean;
   voice: boolean;
   rea: boolean;
+  power: boolean;       // allow shutdown/restart/sleep/lock
+  terminal: "off" | "scoped" | "full"; // scoped = commands run inside approved dirs; full = unrestricted shell
+  screen: boolean;      // allow screen capture / view
+  messenger: boolean;   // allow showing messages on the PC
 }
 
 export const DEFAULT_PERMISSIONS: PermissionProfile = {
@@ -119,6 +143,10 @@ export const DEFAULT_PERMISSIONS: PermissionProfile = {
   allowNetworkInSandbox: false,
   voice: true,
   rea: false,
+  power: true,
+  terminal: "scoped",
+  screen: true,
+  messenger: true,
 };
 
 export interface Device {

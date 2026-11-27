@@ -187,5 +187,9 @@ export function sanitizePermissions(input: any, current: PermissionProfile): Per
   if (typeof input.allowNetworkInSandbox === "boolean") p.allowNetworkInSandbox = input.allowNetworkInSandbox;
   if (typeof input.voice === "boolean") p.voice = input.voice;
   if (typeof input.rea === "boolean") p.rea = input.rea;
+  if (typeof input.power === "boolean") p.power = input.power;
+  if (input.terminal === "off" || input.terminal === "scoped" || input.terminal === "full") p.terminal = input.terminal;
+  if (typeof input.screen === "boolean") p.screen = input.screen;
+  if (typeof input.messenger === "boolean") p.messenger = input.messenger;
   return p;
 }

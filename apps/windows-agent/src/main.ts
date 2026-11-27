@@ -104,6 +104,8 @@ async function main() {
       const ws = flag("workspace");
       if (ws) { p.workspaceDir = path.resolve(ws); if (!p.approvedDirs.includes(p.workspaceDir)) p.approvedDirs = [p.workspaceDir, ...p.approvedDirs.filter((d) => d !== p.workspaceDir)]; }
       const b = flag("browser"); if (b === "chrome" || b === "msedge") p.browser = b;
+      const prov = flag("provider"); if (prov === "codex" || prov === "claude") p.provider = prov;
+      const term = flag("terminal"); if (term === "off" || term === "scoped" || term === "full") p.terminal = term;
       const v = flag("voice"); if (v) p.voice = v === "true";
       savePolicy(p);
       fs.mkdirSync(p.workspaceDir, { recursive: true });

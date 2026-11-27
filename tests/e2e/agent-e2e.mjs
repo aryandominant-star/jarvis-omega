@@ -65,7 +65,7 @@ await step("agent task: Codex uses jarvis tools via MCP → IPC; report saved an
   const d = await waitTask(t.id, (x) => ["COMPLETED", "FAILED"].includes(x.status));
   assert.equal(d.task.status, "COMPLETED", d.task.error);
   assert.match(d.task.result, /Saved and verified: .*AI developments\.md/);
-  assert.match(d.task.result, /Tools available: 15/);
+  assert.match(d.task.result, /Tools available: 20/);
   assert.ok(fs.existsSync(path.join(dataDir, "workspace", "Reports", "AI developments.md")));
   assert.ok(d.task.threadId, "thread id recorded for safe retry/resume");
   const evs = (await api("GET", `/api/tasks/${t.id}`)).data.events.map((e) => e.data.tool).filter(Boolean);
