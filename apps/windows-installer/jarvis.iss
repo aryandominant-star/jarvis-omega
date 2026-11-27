@@ -146,7 +146,7 @@ begin
 end;
 
 function CheckHealth(Url: String; var Msg: String): Boolean;
-var Http: Variant;
+var Http: Variant; Status: Integer; Body: String;
 begin
   Result := False;
   try
@@ -154,11 +154,13 @@ begin
     Http.SetTimeouts(5000, 5000, 10000, 10000);
     Http.Open('GET', Url + '/api/health', False);
     Http.Send('');
-    if (Http.Status = 200) and (Pos('"ok":true', Http.ResponseText) > 0) then begin
+    Status := Http.Status;
+    Body := Http.ResponseText;
+    if (Status = 200) and (Pos('"ok":true', Body) > 0) then begin
       Result := True;
       Msg := 'Connected to ' + Url + '. The control plane is online.';
     end else
-      Msg := 'The server answered with HTTP ' + IntToStr(Http.Status) + '. Check the address.';
+      Msg := 'The server answered with HTTP ' + IntToStr(Status) + '. Check the address.';
   except
     Msg := 'Could not reach ' + Url + ': ' + GetExceptionMessage;
   end;
