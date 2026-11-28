@@ -1,5 +1,6 @@
 import { DEFAULT_PERMISSIONS, isTerminal } from "../../../packages/shared-types/src/index";
 import { agentCommand, createEnrollmentCode, createPairingCode, pairDevice, sync, taskUpdate, unpairSelf } from "./agent";
+import { assistantChat, clearAssistantHistory, clearAssistantKey, getAssistantConfig, getAssistantHistory, setAssistantConfig } from "./assistant";
 import { changePassword, login, logout, register, requireUser, updateSettings, type AuthedUser } from "./auth";
 import { cronMatches, isValidTimeZone, parseCron, zonedParts } from "./cron";
 import { audit, clientIp, HttpError, json, now, randomId, readJson, safeParse, type Env } from "./lib";
@@ -109,6 +110,13 @@ route("PATCH", "/api/settings", authed(async (req, env, u) => updateSettings(req
 route("GET", "/api/devices", authed(async (_r, env, u) => ({ devices: await listDevices(env, u.id) })));
 route("POST", "/api/devices/pairing-code", authed(async (req, env, u) => createPairingCode(env, u.id, clientIp(req))));
 route("POST", "/api/devices/enrollment-code", authed(async (req, env, u) => createEnrollmentCode(env, u.id, clientIp(req), Number((await req.json<any>().catch(() => ({}))).days) || 30)));
+
+// ---------- cloud assistant (talk to the AI straight from the dashboard, no device required) ----------
+route("GET", "/api/assistant", authed(async (_r, env, u) => ({ ...(await getAssistantConfig(env, u.id)), history: await getAssistantHistory(env, u.id) })));
+route("PUT", "/api/assistant", authed(async (req, env, u) => setAssistantConfig(env, u.id, await readJson(req), clientIp(req))));
+route("DELETE", "/api/assistant/key", authed(async (_r, env, u) => clearAssistantKey(env, u.id)));
+route("POST", "/api/assistant/chat", authed(async (req, env, u) => assistantChat(env, { id: u.id, settings: u.settings, automationPaused: u.automationPaused }, String((await readJson(req)).message ?? ""), clientIp(req))));
+route("POST", "/api/assistant/clear", authed(async (_r, env, u) => clearAssistantHistory(env, u.id)));
 route("PATCH", "/api/devices/:id", authed(async (req, env, u, p) => {
   const row = await env.DB.prepare("SELECT * FROM devices WHERE id = ? AND user_id = ? AND revoked = 0").bind(p.id, u.id).first<any>();
   if (!row) throw new HttpError(404, "Device not found");

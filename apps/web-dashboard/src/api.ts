@@ -77,7 +77,16 @@ export const Api = {
   deleteWorkflow: (id: string) => api(`/api/workflows/${id}`, { method: "DELETE" }),
   runWorkflow: (id: string) => api(`/api/workflows/${id}/run`, { method: "POST" }),
   audit: () => api<{ logs: AuditLog[] }>("/api/audit?limit=200"),
+  assistant: () => api<AssistantState>("/api/assistant"),
+  assistantConfig: (body: { provider: string; model?: string; apiKey?: string }) => api<{ configured: boolean; provider: string; model: string }>("/api/assistant", { method: "PUT", body }),
+  assistantClearKey: () => api<{ configured: boolean }>("/api/assistant/key", { method: "DELETE" }),
+  assistantChat: (message: string) => api<{ reply: string; actions: AssistantAction[] }>("/api/assistant/chat", { body: { message } }),
+  assistantClearHistory: () => api("/api/assistant/clear", { method: "POST" }),
 };
+
+export interface AssistantAction { taskId: string; routedTo: string[]; reason: string; instruction: string }
+export interface AssistantMessage { role: "user" | "assistant"; content: string; actions: AssistantAction[]; ts: number }
+export interface AssistantState { configured: boolean; provider: string; model: string; history: AssistantMessage[] }
 
 /** Run a control action on a device and wait for its result (used by Memory and file search). */
 export async function runControl(deviceId: string, controlAction: string, controlArgs: any = {}, timeoutMs = 30_000): Promise<any> {

@@ -4,6 +4,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
 import { BootIntro } from "./components/BootIntro";
 import { Universe } from "./pages/Universe";
+import { Assistant } from "./pages/Assistant";
 import { Devices } from "./pages/Devices";
 import { Login } from "./pages/Login";
 import { Logs, Memory, Settings, Workflows } from "./pages/Other";
@@ -19,6 +20,7 @@ function Gate() {
   return (
     <Routes>
       <Route path="/" element={<Universe />} />
+      <Route path="/assistant" element={<Assistant />} />
       <Route path="/devices" element={<Devices />} />
       <Route path="/tasks" element={<Tasks />} />
       <Route path="/workflows" element={<Workflows />} />

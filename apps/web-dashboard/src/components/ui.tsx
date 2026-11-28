@@ -13,6 +13,7 @@ export const Icon = {
   mic: <svg viewBox="0 0 24 24">{P("M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3zM5 11a7 7 0 0014 0M12 18v3")}</svg>,
   send: <svg viewBox="0 0 24 24">{P("M4 12l16-8-6 16-2-7z")}</svg>,
   stop: <svg viewBox="0 0 24 24">{P("M7 7h10v10H7z")}</svg>,
+  chat: <svg viewBox="0 0 24 24">{P("M4 5h16v11H9l-4 3v-3H4z M8 9h8M8 12h5")}</svg>,
 };
 
 export function statusDot(s: TaskStatus | string) {

@@ -6,6 +6,7 @@ import { Icon } from "./ui";
 
 const NAV = [
   { to: "/", label: "Command", icon: Icon.core, end: true },
+  { to: "/assistant", label: "Assistant", icon: Icon.chat },
   { to: "/devices", label: "Devices", icon: Icon.devices },
   { to: "/tasks", label: "Tasks", icon: Icon.tasks },
   { to: "/workflows", label: "Workflows", icon: Icon.flows },
