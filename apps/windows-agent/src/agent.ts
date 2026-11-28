@@ -5,7 +5,7 @@ import path from "node:path";
 import {
   DEFAULT_SETTINGS, type AgentSyncResponse, type AgentTaskUpdate, type DeviceCapabilities, type DispatchedTask, type NotificationPrefs, type PermissionProfile, type TaskEvent, type TaskStatus,
 } from "../../../packages/shared-types/src/index";
-import { buildTaskPrompt, codexLogin, codexLoginStatus, PERSONA, resolveCodexBinary, runCodex, writeCodexConfig, type McpDef } from "../../../packages/agent-brain/src/index";
+import { buildTaskPrompt, codexLogin, codexLoginStatus, defaultCodexHomes, importCodexAuth, PERSONA, resolveCodexBinary, runCodex, writeCodexConfig, type McpDef } from "../../../packages/agent-brain/src/index";
 import { BrowserManager } from "../../../packages/browser-controller/src/index";
 import { Vault } from "../../../packages/credential-vault/src/index";
 import { CloudClient, CloudError } from "../../../packages/device-manager/src/index";
@@ -298,7 +298,27 @@ export class Agent {
 
   async refreshCodexStatus() {
     this.codexBin = this.codexBin ?? resolveCodexBinary([path.resolve(paths.appDir), process.cwd()]);
-    this.codex = await codexLoginStatus(this.codexBin, paths.codexHome);
+    let status = await codexLoginStatus(this.codexBin, paths.codexHome);
+    // If JARVIS's own CODEX_HOME isn't signed in, the user may have run `codex login` in a normal
+    // terminal (which writes to ~/.codex). Import that sign-in so it works here — permanently, because
+    // the token then lives in our home and Codex refreshes it on use.
+    if (status === "not_logged_in" || status === "unknown") {
+      for (const home of defaultCodexHomes()) {
+        if (path.resolve(home) === path.resolve(paths.codexHome)) continue;
+        if ((await codexLoginStatus(this.codexBin, home)) === "ready" && importCodexAuth(home, paths.codexHome)) {
+          if ((await codexLoginStatus(this.codexBin, paths.codexHome)) === "ready") {
+            log.info(`Imported Codex sign-in from ${home}`);
+            status = "ready";
+            break;
+          }
+        }
+      }
+    }
+    // Never downgrade a known-good sign-in on an inconclusive (timeout/busy) check — avoids the
+    // dashboard flapping to "not logged in" when Codex was simply slow to answer.
+    if (status === "unknown" && this.codex === "ready") { this.setTray(); return; }
+    if (status === "unknown" && this.codex !== "unknown") { this.setTray(); return; }
+    this.codex = status;
     this.setTray();
   }
 

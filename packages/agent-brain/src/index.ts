@@ -2,6 +2,7 @@
 // supported login flow. JARVIS never reads or copies Codex's tokens — it only runs the official CLI.
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { HIGH_RISK_ACTIONS, type EffectivePermissions } from "../../permissions/src/index";
@@ -38,14 +39,51 @@ function codexEnv(codexHome: string, extra: Record<string, string> = {}) {
   return env;
 }
 
-export function codexLoginStatus(bin: string | null, codexHome: string): Promise<"ready" | "not_logged_in" | "missing"> {
+/**
+ * Codex sign-in state for a given CODEX_HOME.
+ *  - "ready"          signed in with ChatGPT (or an API key)
+ *  - "not_logged_in"  definitely signed out
+ *  - "missing"        the codex binary is gone
+ *  - "unknown"        the check was inconclusive (timeout/busy) — callers must NOT treat this as logged out
+ */
+export function codexLoginStatus(bin: string | null, codexHome: string): Promise<"ready" | "not_logged_in" | "missing" | "unknown"> {
   if (!bin) return Promise.resolve("missing");
   return new Promise((resolve) =>
-    execFile(bin, ["login", "status"], { env: codexEnv(codexHome), windowsHide: true, timeout: 20_000 }, (err, stdout) => {
+    execFile(bin, ["login", "status"], { env: codexEnv(codexHome), windowsHide: true, timeout: 30_000 }, (err, stdout, stderr) => {
       if (err && (err as any).code === "ENOENT") return resolve("missing");
-      resolve(!err && /logged in/i.test(stdout) && !/not logged in/i.test(stdout) ? "ready" : "not_logged_in");
+      // Codex may print to stdout or stderr depending on version — read both.
+      const out = `${stdout || ""}\n${stderr || ""}`;
+      if (/\bnot logged in\b|logged out|no (stored )?credential|run ['"]?codex login|sign ?in to use/i.test(out)) return resolve("not_logged_in");
+      if (/\blogged in\b|signed in|account:|using chatgpt|api key|auth\.json/i.test(out)) return resolve("ready");
+      // A timeout or killed process leaves no clear signal — don't assert a logout.
+      if (err) return resolve("unknown");
+      return resolve("not_logged_in");
     })
   );
+}
+
+/** CODEX_HOMEs a user might have signed into outside JARVIS (system Codex), newest-intent first. */
+export function defaultCodexHomes(): string[] {
+  const homes: string[] = [];
+  if (process.env.CODEX_HOME) homes.push(process.env.CODEX_HOME);
+  homes.push(path.join(os.homedir(), ".codex"));
+  if (IS_WIN && process.env.USERPROFILE) homes.push(path.join(process.env.USERPROFILE, ".codex"));
+  return [...new Set(homes.map((h) => path.resolve(h)))];
+}
+
+/** Copy a valid Codex auth.json from one home into JARVIS's private home, so a sign-in done elsewhere sticks. */
+export function importCodexAuth(fromHome: string, toHome: string): boolean {
+  try {
+    const src = path.join(fromHome, "auth.json");
+    if (!fs.existsSync(src)) return false;
+    const raw = fs.readFileSync(src, "utf8");
+    JSON.parse(raw); // ensure it's real auth, not a stub
+    fs.mkdirSync(toHome, { recursive: true });
+    fs.writeFileSync(path.join(toHome, "auth.json"), raw, { mode: 0o600 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Starts Codex's official "Sign in with ChatGPT" browser flow. Resolves when the CLI finishes. */
