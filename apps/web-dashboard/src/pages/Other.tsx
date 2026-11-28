@@ -4,7 +4,7 @@ import { Api, runControl } from "../api";
 import { useAuth } from "../auth";
 import { Layout } from "../components/Layout";
 import { ago, usePoll } from "../components/ui";
-import { pickVoice } from "../voice";
+import { ensureVoices, listVoices, pickVoice } from "../voice";
 
 // ---------------- Workflows ----------------
 const PRESETS = [
@@ -166,10 +166,11 @@ export function Settings() {
   const [msg, setMsg] = useState<string | null>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   useEffect(() => {
-    const load = () => setVoices((window.speechSynthesis?.getVoices() ?? []).filter((v) => v.lang.startsWith("en")));
-    load(); window.speechSynthesis?.addEventListener("voiceschanged", load);
+    const load = () => setVoices(listVoices()); // best (natural/neural) first
+    ensureVoices().then(load); window.speechSynthesis?.addEventListener("voiceschanged", load);
     return () => window.speechSynthesis?.removeEventListener("voiceschanged", load);
   }, []);
+  const NATURAL = /natural|neural|online|google|siri|premium|enhanced|wavenet/i;
   if (!me) return null;
   const s = me.settings;
   const save = async (patch: any) => { const r = await Api.updateSettings(patch); setMe({ ...me, settings: r.settings }); };
@@ -214,13 +215,17 @@ export function Settings() {
           <div className="panel-title">Voice & display</div>
           <div className="field"><label>Browser voice</label>
             <select className="input" value={s.voiceName ?? ""} onChange={(e) => save({ voiceName: e.target.value || null })}>
-              <option value="">Automatic (British English)</option>
-              {voices.map((v) => <option key={v.name} value={v.name}>{v.name} — {v.lang}</option>)}
+              <option value="">Automatic (best available)</option>
+              {voices.map((v) => <option key={v.name} value={v.name}>{NATURAL.test(v.name) ? "★ " : ""}{v.name} — {v.lang}</option>)}
             </select>
+            <p className="note" style={{ marginTop: 6 }}>★ marks natural / neural voices (best quality). If the list is short, install more in your OS voice settings — e.g. Microsoft “Online (Natural)” or a Google voice in Chrome.</p>
           </div>
           <button className="btn ghost sm" onClick={() => {
-            const u = new SpeechSynthesisUtterance("Online and operational.");
-            const v = pickVoice(s.voiceName); if (v) u.voice = v; window.speechSynthesis.speak(u);
+            const u = new SpeechSynthesisUtterance("All systems online. Standing by for your orders.");
+            const v = pickVoice(s.voiceName); if (v) { u.voice = v; u.lang = v.lang; }
+            const nat = v ? NATURAL.test(v.name) : false;
+            u.rate = nat ? 1.0 : 0.96; u.pitch = nat ? 1.0 : 0.9;
+            window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
           }}>Test voice</button>
           <label className="check" style={{ marginTop: 18 }}><input type="checkbox" checked={s.reducedMotion} onChange={(e) => save({ reducedMotion: e.target.checked })} />Reduce motion</label>
         </div>
