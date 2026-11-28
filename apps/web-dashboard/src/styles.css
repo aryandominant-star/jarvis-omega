@@ -339,3 +339,118 @@ table.tbl td.mono { font-family: var(--mono); font-size: 12px; color: var(--mute
   .u-dock { width: calc(100% - 40px); }
   .u-voice { display: none; }
 }
+
+/* ============================================================
+   SERIOUS MODE — the whole command center burns red
+   ============================================================ */
+.serious-toggle {
+  background: linear-gradient(180deg, rgba(255,60,60,0.12), rgba(255,30,30,0.06));
+  border: 1px solid rgba(255,70,70,0.45);
+  color: #ffb0a6;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 700;
+}
+.serious-toggle:hover { border-color: rgba(255,70,70,0.8); color: #ffd7d0; box-shadow: 0 0 18px rgba(255,40,40,0.35); }
+.serious-toggle.armed {
+  background: linear-gradient(180deg, #ff2a2a, #b00018);
+  border-color: #ff6b6b;
+  color: #fff;
+  box-shadow: 0 0 22px rgba(255,30,30,0.6), inset 0 0 14px rgba(255,255,255,0.18);
+  animation: seriousPulse 1.6s ease-in-out infinite;
+}
+@keyframes seriousPulse {
+  0%, 100% { box-shadow: 0 0 18px rgba(255,30,30,0.5), inset 0 0 12px rgba(255,255,255,0.15); }
+  50% { box-shadow: 0 0 34px rgba(255,40,40,0.9), inset 0 0 18px rgba(255,255,255,0.28); }
+}
+.u-serious-banner {
+  position: absolute; top: 74px; left: 50%; transform: translateX(-50%); z-index: 30;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 18px; border-radius: 999px;
+  background: linear-gradient(90deg, rgba(60,0,0,0.6), rgba(120,0,10,0.75), rgba(60,0,0,0.6));
+  border: 1px solid rgba(255,70,70,0.5);
+  color: #ffd2cc; font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+  text-transform: uppercase; white-space: nowrap;
+  box-shadow: 0 0 30px rgba(255,20,20,0.35);
+  backdrop-filter: blur(8px);
+  animation: bannerIn 0.4s ease-out;
+}
+.u-serious-banner .pip { width: 9px; height: 9px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 10px #ff3b30; animation: seriousPulse 1.2s infinite; }
+@keyframes bannerIn { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+/* Variable override: everything using the theme vars turns red */
+.universe.serious {
+  --cyan: #ff4d4d;
+  --cyan-soft: #ff9a8f;
+  --blue: #ff2a4a;
+  --line: rgba(255,60,60,0.20);
+  --line-strong: rgba(255,60,60,0.5);
+}
+.universe.serious .u-brand .brand-mark { box-shadow: 0 0 24px rgba(255,40,40,0.7); }
+.universe.serious::after {
+  content: ""; position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  background: radial-gradient(130% 90% at 50% 120%, rgba(255,20,20,0.22), transparent 60%),
+              radial-gradient(100% 70% at 50% -20%, rgba(255,0,0,0.12), transparent 60%);
+  mix-blend-mode: screen;
+  animation: seriousWash 4s ease-in-out infinite;
+}
+@keyframes seriousWash { 0%,100% { opacity: 0.55; } 50% { opacity: 0.9; } }
+
+/* ============================================================
+   "MADE BY ARYAN" — cinematic boot intro
+   ============================================================ */
+.boot-intro {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center, #060b16 0%, #02030a 70%, #000 100%);
+  overflow: hidden;
+  animation: bootFade 0.6s ease-out 3.4s forwards;
+}
+.boot-intro.done { display: none; }
+.boot-ring {
+  position: absolute; width: 420px; height: 420px; border-radius: 50%;
+  border: 1px solid rgba(0,229,255,0.25);
+  box-shadow: 0 0 60px rgba(0,229,255,0.15) inset, 0 0 40px rgba(0,229,255,0.1);
+  animation: bootSpin 6s linear infinite, bootRingIn 1s ease-out;
+}
+.boot-ring.r2 { width: 300px; height: 300px; border-color: rgba(120,90,255,0.3); animation: bootSpinR 8s linear infinite; }
+.boot-ring.r3 { width: 180px; height: 180px; border-style: dashed; border-color: rgba(0,229,255,0.4); animation: bootSpin 4s linear infinite; }
+@keyframes bootSpin { to { transform: rotate(360deg); } }
+@keyframes bootSpinR { to { transform: rotate(-360deg); } }
+@keyframes bootRingIn { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
+.boot-made {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.5em; text-transform: uppercase;
+  color: var(--muted); opacity: 0; animation: madeIn 0.8s ease-out 0.4s forwards;
+  margin-bottom: 14px;
+}
+.boot-aryan {
+  font-family: var(--sans); font-weight: 700; font-size: clamp(40px, 9vw, 96px);
+  letter-spacing: 0.22em; text-transform: uppercase;
+  background: linear-gradient(90deg, #7df3ff, #fff 45%, #a98bff 70%, #00e5ff);
+  background-size: 220% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 28px rgba(0,229,255,0.45));
+  opacity: 0; transform: translateY(14px) scale(0.96);
+  animation: aryanIn 1.1s cubic-bezier(.16,1,.3,1) 0.7s forwards, aryanShine 3s ease-in-out 1.6s;
+}
+.boot-sub {
+  font-family: var(--mono); font-size: 13px; letter-spacing: 0.4em; text-transform: uppercase;
+  color: var(--cyan-soft); opacity: 0; margin-top: 18px;
+  animation: madeIn 0.8s ease-out 1.6s forwards;
+}
+.boot-scan {
+  position: absolute; left: 0; right: 0; height: 2px; top: 50%;
+  background: linear-gradient(90deg, transparent, rgba(0,229,255,0.8), transparent);
+  animation: bootScan 3.2s ease-in-out 0.2s;
+}
+@keyframes madeIn { to { opacity: 1; } }
+@keyframes aryanIn { to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes aryanShine { 0% { background-position: 0% 0; } 100% { background-position: 220% 0; } }
+@keyframes bootScan { 0% { transform: translateY(-46vh); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateY(46vh); opacity: 0; } }
+@keyframes bootFade { to { opacity: 0; visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) {
+  .boot-ring, .boot-scan { animation: bootRingIn 0.4s ease-out forwards; }
+  .boot-aryan, .boot-made, .boot-sub { animation: madeIn 0.4s ease-out forwards; }
+  .boot-intro { animation: bootFade 0.4s ease-out 1.6s forwards; }
+}

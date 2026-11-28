@@ -130,6 +130,7 @@ function PermissionsEditor({ device, onSaved }: { device: Device; onSaved: () =>
         <select className="input" value={p.autonomy} onChange={(e) => setP({ ...p, autonomy: e.target.value as any })}>
           <option value="routine">Routine — act on low-risk steps, confirm high-risk actions</option>
           <option value="confirm-all">Confirm everything that changes something</option>
+          <option value="serious">Serious — full authority, only truly irreversible actions are held</option>
         </select>
       </div>
       <div className="field"><label>Default workspace</label><input className="input" value={p.workspaceDir} onChange={(e) => setP({ ...p, workspaceDir: e.target.value })} placeholder="(device default)" /></div>

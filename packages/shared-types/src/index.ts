@@ -118,7 +118,7 @@ export interface DeviceCapabilities {
 }
 
 export interface PermissionProfile {
-  autonomy: "routine" | "confirm-all";
+  autonomy: "routine" | "confirm-all" | "serious";
   workspaceDir: string;
   approvedDirs: string[];
   allowedApps: string[]; // ["*"] = any discovered app

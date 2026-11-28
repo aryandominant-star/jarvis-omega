@@ -2,6 +2,7 @@ import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
+import { BootIntro } from "./components/BootIntro";
 import { Universe } from "./pages/Universe";
 import { Devices } from "./pages/Devices";
 import { Login } from "./pages/Login";
@@ -32,6 +33,7 @@ function Gate() {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AuthProvider>
+      <BootIntro />
       {/* Hash routing works on any static host (InfinityFree included) without server rewrites. */}
       <HashRouter><Gate /></HashRouter>
     </AuthProvider>

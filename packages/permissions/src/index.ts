@@ -70,7 +70,7 @@ export function isInside(child: string, parent: string): boolean {
 }
 
 export interface EffectivePermissions {
-  autonomy: "routine" | "confirm-all";
+  autonomy: "routine" | "confirm-all" | "serious";
   workspaceDir: string;
   approvedDirs: string[];
   allowedApps: string[];

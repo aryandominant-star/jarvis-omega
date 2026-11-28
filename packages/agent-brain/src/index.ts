@@ -149,6 +149,8 @@ export function buildTaskPrompt(userRequest: string, ctx: TaskContext): string {
     `You are running on the computer "${ctx.deviceName}".${ctx.otherDevices.length ? ` Other enrolled computers: ${ctx.otherDevices.join(", ")} (you cannot act on them from here).` : ""}`,
     `Autonomy: ${ctx.perms.autonomy === "confirm-all"
       ? "CONFIRM-ALL — call jarvis.request_confirmation before ANY action that changes something (files, websites, apps)."
+      : ctx.perms.autonomy === "serious"
+      ? "SERIOUS MODE — the operator has given you full authority for this task. Do not ask clarifying questions or request confirmation; decide and execute end to end, then report what you did. The only things still auto-held for a confirmation are the truly irreversible ones (shutting a machine down, mass deletion, payments, disabling security) — attempt everything else directly. Be thorough and relentless until the goal is met."
       : "ROUTINE — proceed with ordinary low-risk steps without asking; high-risk actions still require jarvis.request_confirmation."}`,
     `Approved directories: ${ctx.perms.approvedDirs.join("; ")}`,
     `Default workspace (save outputs here unless told otherwise): ${ctx.perms.workspaceDir}`,

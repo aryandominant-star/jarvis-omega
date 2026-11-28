@@ -4,7 +4,7 @@ import {
 import { audit, now, randomId, safeParse, truncate, type Env } from "./lib";
 import { resolveDevices } from "./routing";
 
-export const ONLINE_WINDOW_MS = 75_000;
+export const ONLINE_WINDOW_MS = 130_000;
 
 export function rowToDevice(r: any, currentTasks = 0): Device {
   return {
@@ -178,7 +178,7 @@ export function sanitizePermissions(input: any, current: PermissionProfile): Per
   const strList = (v: unknown, max = 50) =>
     Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.length < 500).slice(0, max) : undefined;
   const p = { ...current };
-  if (input.autonomy === "routine" || input.autonomy === "confirm-all") p.autonomy = input.autonomy;
+  if (input.autonomy === "routine" || input.autonomy === "confirm-all" || input.autonomy === "serious") p.autonomy = input.autonomy;
   if (typeof input.workspaceDir === "string") p.workspaceDir = input.workspaceDir.slice(0, 500);
   p.approvedDirs = strList(input.approvedDirs) ?? p.approvedDirs;
   p.allowedApps = strList(input.allowedApps, 200) ?? p.allowedApps;

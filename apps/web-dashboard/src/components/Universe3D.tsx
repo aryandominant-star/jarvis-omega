@@ -1,20 +1,35 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Bloom, EffectComposer, Vignette, ChromaticAberration } from "@react-three/postprocessing";
+import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Device } from "../../../../packages/shared-types/src/index";
 
 export type CoreState = "idle" | "listening" | "thinking" | "executing" | "speaking" | "error" | "offline";
 
-const PALETTE: Record<CoreState, { core: string; accent: string; speed: number; energy: number }> = {
-  idle: { core: "#00e5ff", accent: "#3b5bff", speed: 0.18, energy: 0.9 },
-  listening: { core: "#8ff7ff", accent: "#00e5ff", speed: 0.45, energy: 1.25 },
-  thinking: { core: "#4cc9ff", accent: "#8b5cf6", speed: 1.0, energy: 1.35 },
-  executing: { core: "#2ee6ff", accent: "#00b3ff", speed: 1.6, energy: 1.6 },
-  speaking: { core: "#b5fbff", accent: "#22d3ee", speed: 0.6, energy: 1.45 },
-  error: { core: "#ffb547", accent: "#ff6b3d", speed: 0.25, energy: 1.0 },
+type Pal = { core: string; accent: string; speed: number; energy: number };
+
+const PALETTE: Record<CoreState, Pal> = {
+  idle: { core: "#aef4ff", accent: "#4f7bff", speed: 0.2, energy: 1.05 },
+  listening: { core: "#ccfbff", accent: "#00e5ff", speed: 0.45, energy: 1.3 },
+  thinking: { core: "#8fe0ff", accent: "#8b5cf6", speed: 1.0, energy: 1.4 },
+  executing: { core: "#5cf2ff", accent: "#00b3ff", speed: 1.6, energy: 1.65 },
+  speaking: { core: "#e6feff", accent: "#22d3ee", speed: 0.6, energy: 1.5 },
+  error: { core: "#ffb547", accent: "#ff6b3d", speed: 0.25, energy: 1.05 },
   offline: { core: "#3a5470", accent: "#1d2b40", speed: 0.05, energy: 0.35 },
 };
+
+// Serious mode: the whole core burns red. Faster, hotter, more urgent.
+const SERIOUS: Record<CoreState, Pal> = {
+  idle: { core: "#ff5a52", accent: "#b1121f", speed: 0.5, energy: 1.35 },
+  listening: { core: "#ff8a7a", accent: "#ff2a2a", speed: 0.7, energy: 1.5 },
+  thinking: { core: "#ff6b5a", accent: "#ff1744", speed: 1.3, energy: 1.6 },
+  executing: { core: "#ff4d4d", accent: "#ff0033", speed: 2.0, energy: 1.9 },
+  speaking: { core: "#ffb0a0", accent: "#ff3b30", speed: 0.85, energy: 1.65 },
+  error: { core: "#ffd23d", accent: "#ff3b1f", speed: 0.4, energy: 1.2 },
+  offline: { core: "#5a2b2b", accent: "#2a0d0d", speed: 0.05, energy: 0.4 },
+};
+
+const pal = (state: CoreState, serious: boolean): Pal => (serious ? SERIOUS : PALETTE)[state];
 
 // ---------- shared GLSL ----------
 const NOISE = /* glsl */ `
@@ -30,39 +45,44 @@ vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);vec3 p2=vec3(a1.xy,h.z);vec3 p3=
 vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));p0*=norm.x;p1*=norm.y;p2*=norm.z;p3*=norm.w;
 vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.);m=m*m;
 return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));}
-float fbm(vec3 p){float f=0.,a=.5;for(int i=0;i<5;i++){f+=a*snoise(p);p*=2.02;a*=.5;}return f;}
+float fbm(vec3 p){float f=0.,a=.5;for(int i=0;i<3;i++){f+=a*snoise(p);p*=2.02;a*=.5;}return f;}
 `;
 
 // ---------- nebula sky ----------
-function Nebula() {
+function Nebula({ serious }: { serious: boolean }) {
   const mat = useMemo(() => new THREE.ShaderMaterial({
     side: THREE.BackSide, depthWrite: false,
-    uniforms: { uTime: { value: 0 } },
+    uniforms: { uTime: { value: 0 }, uSerious: { value: 0 } },
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
     fragmentShader: NOISE + /* glsl */ `
-      uniform float uTime; varying vec3 vDir;
+      uniform float uTime; uniform float uSerious; varying vec3 vDir;
       void main(){
         vec3 d = vDir; float t = uTime*0.006;
         float n1 = fbm(d*2.2 + vec3(t,0.,-t));
         float n2 = fbm(d*4.5 - vec3(0.,t*1.5,t));
         float band = exp(-pow(d.y*2.6 + n1*0.6, 2.0));
-        vec3 deep = vec3(0.008,0.012,0.03);
-        vec3 violet = vec3(0.16,0.06,0.34);
-        vec3 cyan = vec3(0.0,0.42,0.55);
+        vec3 deep   = mix(vec3(0.008,0.012,0.03), vec3(0.05,0.004,0.006), uSerious);
+        vec3 violet = mix(vec3(0.16,0.06,0.34),  vec3(0.42,0.03,0.05),  uSerious);
+        vec3 cyan   = mix(vec3(0.0,0.42,0.55),   vec3(0.6,0.07,0.05),   uSerious);
+        vec3 spark  = mix(vec3(0.9,0.5,0.95),    vec3(1.0,0.35,0.25),   uSerious);
         vec3 col = deep;
         col += violet * smoothstep(0.0,0.9,n1+0.35) * 0.55;
         col += cyan * smoothstep(0.15,1.0,n2+band*0.6) * band * 0.55;
-        col += vec3(0.9,0.5,0.95) * pow(max(n2,0.0),5.0) * 0.25;
+        col += spark * pow(max(n2,0.0),5.0) * 0.25;
         gl_FragColor = vec4(col,1.);
       }`,
   }), []);
-  useFrame((_, dt) => { mat.uniforms.uTime.value += dt; });
-  return <mesh material={mat}><sphereGeometry args={[80, 48, 48]} /></mesh>;
+  useFrame((_, dt) => {
+    mat.uniforms.uTime.value += dt;
+    const u = mat.uniforms.uSerious;
+    u.value += ((serious ? 1 : 0) - u.value) * Math.min(1, dt * 1.5);
+  });
+  return <mesh material={mat}><sphereGeometry args={[80, 32, 32]} /></mesh>;
 }
 
 function Stars() {
   const geo = useMemo(() => {
-    const n = 2600, pos = new Float32Array(n * 3), col = new Float32Array(n * 3), size = new Float32Array(n);
+    const n = 1500, pos = new Float32Array(n * 3), col = new Float32Array(n * 3), size = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       const r = 18 + Math.random() * 55, t = Math.random() * Math.PI * 2, p = Math.acos(2 * Math.random() - 1);
       pos.set([r * Math.sin(p) * Math.cos(t), r * Math.cos(p), r * Math.sin(p) * Math.sin(t)], i * 3);
@@ -99,8 +119,8 @@ function glowTexture(inner: string, outer = "rgba(0,0,0,0)") {
   return new THREE.CanvasTexture(c);
 }
 
-function Core({ state, level }: { state: CoreState; level: React.MutableRefObject<number> }) {
-  const p = PALETTE[state];
+function Core({ state, level, serious }: { state: CoreState; level: React.MutableRefObject<number>; serious: boolean }) {
+  const p = pal(state, serious);
   const plasma = useMemo(() => new THREE.ShaderMaterial({
     uniforms: { uTime: { value: 0 }, uCol: { value: new THREE.Color(p.core) }, uAcc: { value: new THREE.Color(p.accent) }, uEnergy: { value: 1 } },
     vertexShader: `varying vec3 vN; varying vec3 vP; varying vec3 vV; void main(){ vN=normalize(normalMatrix*normal); vP=position;
@@ -163,7 +183,7 @@ function Core({ state, level }: { state: CoreState; level: React.MutableRefObjec
     <group>
       <sprite ref={coronaRef}><spriteMaterial map={corona} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.85} /></sprite>
       <sprite scale={[1.6, 1.6, 1]}><spriteMaterial map={flare} transparent depthWrite={false} blending={THREE.AdditiveBlending} opacity={0.5} /></sprite>
-      <mesh ref={coreRef} material={plasma}><icosahedronGeometry args={[0.72, 24]} /></mesh>
+      <mesh ref={coreRef} material={plasma}><icosahedronGeometry args={[0.72, 6]} /></mesh>
       <mesh rotation={[-Math.PI / 2.25, 0, 0.2]} material={disk}><planeGeometry args={[4.6, 4.6]} /></mesh>
       <group ref={ticks} rotation={[-Math.PI / 2.25, 0, 0.2]}>
         <lineSegments geometry={tickGeo}><lineBasicMaterial color={p.core} transparent opacity={0.45} /></lineSegments>
@@ -265,7 +285,7 @@ function Planet({ device, index, count, selected, onSelect, positions }: {
         onClick={(e) => { e.stopPropagation(); onSelect(device.id); }}
         onPointerOver={(e) => { e.stopPropagation(); setHover(true); document.body.style.cursor = "pointer"; }}
         onPointerOut={() => { setHover(false); document.body.style.cursor = "default"; }}>
-        <sphereGeometry args={[size, 64, 64]} />
+        <sphereGeometry args={[size, 32, 24]} />
       </mesh>
       <group ref={hud}>
         <primitive object={cpuArc} />
@@ -315,10 +335,10 @@ function Links({ devices, positions }: { devices: Device[]; positions: React.Mut
   return <group>{lines.map((l, i) => <primitive key={i} object={l} />)}<primitive object={pulses} /></group>;
 }
 
-function Dust({ state }: { state: CoreState }) {
-  const p = PALETTE[state];
+function Dust({ state, serious }: { state: CoreState; serious: boolean }) {
+  const p = pal(state, serious);
   const { geo, speeds } = useMemo(() => {
-    const n = 1800, pos = new Float32Array(n * 3), sp = new Float32Array(n);
+    const n = 1000, pos = new Float32Array(n * 3), sp = new Float32Array(n);
     for (let i = 0; i < n; i++) {
       const r = 1.4 + Math.pow(Math.random(), 1.6) * 9, a = Math.random() * Math.PI * 2;
       pos.set([Math.cos(a) * r, (Math.random() - 0.5) * 0.35 * (r / 3), Math.sin(a) * r], i * 3);
@@ -356,24 +376,23 @@ function Rig({ selected, positions }: { selected: string | null; positions: Reac
   return null;
 }
 
-function Scene({ state, level, devices, selected, onSelect, reducedMotion }: {
-  state: CoreState; level: React.MutableRefObject<number>; devices: Device[]; selected: string | null; onSelect: (id: string) => void; reducedMotion: boolean;
+function Scene({ state, level, devices, selected, onSelect, reducedMotion, serious }: {
+  state: CoreState; level: React.MutableRefObject<number>; devices: Device[]; selected: string | null; onSelect: (id: string) => void; reducedMotion: boolean; serious: boolean;
 }) {
   const positions = useRef(new Map<string, THREE.Vector3>());
   return (
     <>
-      <Nebula />
+      <Nebula serious={serious} />
       <Stars />
-      <Core state={state} level={level} />
-      <Dust state={state} />
+      <Core state={state} level={level} serious={serious} />
+      <Dust state={state} serious={serious} />
       <Links devices={devices} positions={positions} />
       {devices.map((d, i) => <Planet key={d.id} device={d} index={i} count={devices.length} selected={selected === d.id} onSelect={onSelect} positions={positions} />)}
       <Rig selected={selected} positions={positions} />
       {!reducedMotion && (
         <EffectComposer multisampling={0}>
-          <Bloom intensity={1.15} luminanceThreshold={0.22} luminanceSmoothing={0.35} mipmapBlur radius={0.75} />
-          <ChromaticAberration offset={new THREE.Vector2(0.0006, 0.0006)} radialModulation={false} modulationOffset={0} />
-          <Vignette eskil={false} offset={0.22} darkness={0.85} />
+          <Bloom intensity={serious ? 1.25 : 0.95} luminanceThreshold={0.26} luminanceSmoothing={0.4} mipmapBlur radius={0.68} />
+          <Vignette eskil={false} offset={0.24} darkness={serious ? 1.05 : 0.82} />
         </EffectComposer>
       )}
     </>
@@ -381,14 +400,14 @@ function Scene({ state, level, devices, selected, onSelect, reducedMotion }: {
 }
 
 export function Universe3D(props: {
-  state: CoreState; level: React.MutableRefObject<number>; devices: Device[]; selected: string | null; onSelect: (id: string) => void; reducedMotion: boolean;
+  state: CoreState; level: React.MutableRefObject<number>; devices: Device[]; selected: string | null; onSelect: (id: string) => void; reducedMotion: boolean; serious: boolean;
 }) {
   return (
-    <Canvas camera={{ position: [0, 3.1, 11.5], fov: 44, near: 0.1, far: 200 }} dpr={[1, 1.75]}
+    <Canvas camera={{ position: [0, 3.1, 11.5], fov: 44, near: 0.1, far: 200 }} dpr={[1, 1.5]}
       frameloop={props.reducedMotion ? "demand" : "always"}
-      gl={{ antialias: false, alpha: false, powerPreference: "high-performance", preserveDrawingBuffer: true, toneMapping: THREE.ACESFilmicToneMapping }}
+      gl={{ antialias: false, alpha: false, powerPreference: "high-performance", toneMapping: THREE.ACESFilmicToneMapping }}
       onPointerMissed={() => props.onSelect("")}>
-      <color attach="background" args={["#02040a"]} />
+      <color attach="background" args={[props.serious ? "#0a0203" : "#02040a"]} />
       <Scene {...props} />
     </Canvas>
   );

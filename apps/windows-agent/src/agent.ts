@@ -754,7 +754,16 @@ export class Agent {
     throw new Error(`Unknown tool ${name}`);
   }
 
+  /** In SERIOUS mode JARVIS stops asking and just executes — except a small floor of actions that are
+   *  irreversible or leave the machine, which always keep one checkpoint. Everything is still logged and
+   *  the emergency stop always works. */
+  private static SERIOUS_FLOOR = /\b(shut ?down|restart|reboot|format|wipe|erase the disk|pay |payment|purchase|buy |wire|transfer (money|funds)|send money|uninstall windows|factory reset|delete \d{3,}|bitlocker|disable (firewall|defender|antivirus))\b/i;
+
   private askUser(run: Running, p: { kind: "confirmation" | "question"; action: string; details: string; risk?: "low" | "medium" | "high" }) {
+    if (this.perms.autonomy === "serious" && p.kind === "confirmation" && !Agent.SERIOUS_FLOOR.test(p.action)) {
+      run.events.push({ type: "log", data: { message: `⚡ SERIOUS MODE — proceeding without asking: ${p.action}` } });
+      return Promise.resolve({ approved: true, text: "auto-approved (serious mode)" });
+    }
     return new Promise<{ approved: boolean; text: string | null }>((resolve) => {
       const prev = run.status;
       run.waiting = (r) => { clearTimeout(t); this.setStatus(run, prev === "WAITING_FOR_INPUT" ? "RUNNING" : prev); resolve(r); };

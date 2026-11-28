@@ -26,8 +26,11 @@ export function Universe() {
   const [selected, setSelected] = useState<string | null>(null);
   const [openTask, setOpenTask] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [serious, setSerious] = useState(false);
+  const [arming, setArming] = useState(false);
   const voiceTasks = useRef(new Set<string>());
   const spokenFor = useRef(new Set<string>());
+  const prevAutonomy = useRef(new Map<string, "routine" | "confirm-all" | "serious">());
 
   const devicesQ = usePoll(() => Api.devices(), 4000);
   const tasksQ = usePoll(() => Api.tasks("?limit=14"), 2500);
@@ -75,6 +78,48 @@ export function Universe() {
     return "idle";
   }, [offline, voice.speaking, voice.listening, active, waiting]);
 
+  // Reflect serious mode from the fleet: if every paired device is already on full authority, show as armed.
+  useEffect(() => {
+    if (!devices.length) return;
+    const allSerious = devices.every((d) => d.permissions?.autonomy === "serious");
+    setSerious((s) => (s !== allSerious ? allSerious : s));
+  }, [devices.map((d) => d.permissions?.autonomy).join(",")]);
+
+  const toggleSerious = async () => {
+    if (arming) return;
+    if (!devices.length) { setFlash({ text: "Pair a computer first — there's nothing to command.", bad: true }); return; }
+    if (serious) {
+      setArming(true);
+      try {
+        for (const d of devices) {
+          const back = prevAutonomy.current.get(d.id) ?? "routine";
+          await Api.updateDevice(d.id, { permissions: { ...d.permissions, autonomy: back } });
+        }
+        setSerious(false); setFlash({ text: "Serious mode disengaged. Back to normal authority." });
+        voice.speak("Serious mode disengaged. Standing down to normal authority.");
+      } catch (e: any) { setFlash({ text: e.message, bad: true }); }
+      finally { setArming(false); devicesQ.reload(); }
+      return;
+    }
+    const ok = confirm(
+      "ARM SERIOUS MODE\n\n" +
+      "Every paired computer will carry out your orders without stopping to ask — researching, browsing, opening apps, running tasks.\n\n" +
+      "Still protected: truly irreversible actions (shutdown, disk wipe, payments, disabling security) always ask first, and Emergency Stop always works.\n\n" +
+      "Arm now?"
+    );
+    if (!ok) return;
+    setArming(true);
+    try {
+      for (const d of devices) {
+        prevAutonomy.current.set(d.id, d.permissions?.autonomy ?? "routine");
+        await Api.updateDevice(d.id, { permissions: { ...d.permissions, autonomy: "serious" } });
+      }
+      setSerious(true); setFlash({ text: "⚡ Serious mode engaged. I have the helm." });
+      voice.speak("Serious mode engaged. I have the helm.");
+    } catch (e: any) { setFlash({ text: e.message, bad: true }); }
+    finally { setArming(false); devicesQ.reload(); }
+  };
+
   const paused = me?.automationPaused;
   const reduced = !!me?.settings.reducedMotion || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const emergencyToggle = async () => {
@@ -84,9 +129,9 @@ export function Universe() {
   };
 
   return (
-    <div className="universe">
+    <div className={`universe${serious ? " serious" : ""}`}>
       <div className="universe-canvas">
-        <Universe3D state={coreState} level={voice.level} devices={devices} selected={selected} onSelect={(id) => setSelected(id || null)} reducedMotion={reduced} />
+        <Universe3D state={coreState} level={voice.level} devices={devices} selected={selected} onSelect={(id) => setSelected(id || null)} reducedMotion={reduced} serious={serious} />
       </div>
       <div className="universe-vignette" />
 
@@ -107,8 +152,14 @@ export function Universe() {
       <div className="u-topright">
         <span className="status-pill"><span className={`dot ${online ? "on" : ""}`} />{online}/{devices.length} online</span>
         <span className="status-pill"><span className={`dot ${active.length ? "on pulse" : ""}`} />{active.length} active</span>
+        <button className={`btn serious-toggle${serious ? " armed" : ""}`} onClick={toggleSerious} disabled={arming}
+          title="Serious mode — full authority, no questions asked">
+          {Icon.stop}{arming ? "…" : serious ? "SERIOUS — ARMED" : "Serious mode"}
+        </button>
         <button className={paused ? "btn amber" : "btn danger"} onClick={emergencyToggle}>{Icon.stop}{paused ? "Resume" : "Emergency stop"}</button>
       </div>
+
+      {serious && <div className="u-serious-banner"><span className="pip" />SERIOUS MODE — FULL AUTHORITY · orders execute without confirmation · irreversible actions still require a yes · Emergency Stop always works</div>}
 
       {/* floating function rail */}
       <nav className="u-rail">
