@@ -109,3 +109,72 @@ export function countEntries(target: string): number {
     return count;
   } catch { return 0; }
 }
+
+// ---------------- directory index (for the dashboard tree + agent "learning") ----------------
+export interface IndexNode { name: string; type: "dir" | "file"; size?: number; path: string; children?: IndexNode[]; truncated?: boolean }
+export interface FileIndex {
+  roots: IndexNode[];
+  fileCount: number;
+  dirCount: number;
+  bytes: number;
+  byExt: { ext: string; count: number }[];
+  summary: string;
+  truncated: boolean;
+  scannedAt: number;
+}
+
+/**
+ * Walk the approved roots into a bounded directory tree. Used to populate the dashboard file browser
+ * on connect and to give the AI a compact, learnable picture of what lives on the machine.
+ */
+export function buildFileIndex(roots: string[], opts: { maxEntries?: number; maxDepth?: number } = {}): FileIndex {
+  const maxEntries = opts.maxEntries ?? 2000; // keeps the JSON result well within request/D1 limits
+  const maxDepth = opts.maxDepth ?? 4;
+  let fileCount = 0, dirCount = 0, bytes = 0, visited = 0;
+  let truncated = false;
+  const byExt = new Map<string, number>();
+
+  const walk = (dir: string, depth: number): IndexNode[] => {
+    if (depth > maxDepth || visited >= maxEntries) { truncated = truncated || visited >= maxEntries; return []; }
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+    const out: IndexNode[] = [];
+    // Directories first, then files — both alphabetical, so the tree reads naturally.
+    entries.sort((a, b) => (a.isDirectory() === b.isDirectory() ? a.name.localeCompare(b.name) : a.isDirectory() ? -1 : 1));
+    for (const e of entries) {
+      if (visited >= maxEntries) { truncated = true; break; }
+      if (e.isSymbolicLink()) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (SKIP.has(e.name.toLowerCase()) || e.name.startsWith(".")) continue;
+        visited++; dirCount++;
+        out.push({ name: e.name, type: "dir", path: full, children: walk(full, depth + 1) });
+      } else {
+        visited++; fileCount++;
+        let size = 0;
+        try { size = fs.statSync(full).size; } catch { /* vanished */ }
+        bytes += size;
+        const ext = (path.extname(e.name).toLowerCase() || "(none)").replace(/^\./, "");
+        byExt.set(ext, (byExt.get(ext) ?? 0) + 1);
+        out.push({ name: e.name, type: "file", path: full, size });
+      }
+    }
+    return out;
+  };
+
+  const rootNodes: IndexNode[] = [];
+  for (const r of [...new Set(roots)]) {
+    if (!fs.existsSync(r)) continue;
+    rootNodes.push({ name: r, type: "dir", path: r, children: walk(r, 1) });
+  }
+  const topExt = [...byExt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([ext, count]) => ({ ext, count }));
+
+  const topExtStr = topExt.slice(0, 6).map((e) => `${e.ext} (${e.count})`).join(", ");
+  const rootList = rootNodes.map((r) => r.name).join("; ");
+  const summary =
+    `Workspace scan: ${fileCount} files and ${dirCount} folders (${(bytes / 1024 / 1024).toFixed(1)} MB) under ${rootList || "no approved folders"}. ` +
+    (topExtStr ? `Most common file types: ${topExtStr}.` : "No files found.") +
+    (truncated ? " (Index truncated at the scan limit.)" : "");
+
+  return { roots: rootNodes, fileCount, dirCount, bytes, byExt: topExt, summary, truncated, scannedAt: Date.now() };
+}

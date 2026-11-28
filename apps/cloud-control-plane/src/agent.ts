@@ -34,19 +34,48 @@ export async function createPairingCode(env: Env, userId: string, ip: string) {
   return { code, expiresAt };
 }
 
+/**
+ * Reusable enrollment code — a longer code (12 chars, XXXX-XXXX-XXXX) that pairs many devices and lives
+ * for `days` (default 30). You bake one of these into a pre-configured installer so that anyone who
+ * downloads and runs it is paired and online automatically, with no code to type.
+ */
+export async function createEnrollmentCode(env: Env, userId: string, ip: string, days = 30) {
+  await rateLimit(env, `enrollcode:${userId}`, 20, 3600);
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = randomBytes(12);
+  const raw = [...bytes].map((b) => alphabet[b % alphabet.length]).join("");
+  const code = `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8)}`;
+  const ttlDays = Math.min(365, Math.max(1, Math.round(days)));
+  const expiresAt = now() + ttlDays * 24 * 60 * 60 * 1000;
+  await env.DB.prepare("INSERT INTO pairing_codes (code_hash, user_id, created_at, expires_at, reusable, label) VALUES (?,?,?,?,1,?)")
+    .bind(await sha256Hex(raw), userId, now(), expiresAt, "enrollment").run();
+  await audit(env, userId, "user", "device.enrollment_code_created", { expiresAt }, ip);
+  return { code, expiresAt, reusable: true };
+}
+
 export async function pairDevice(req: Request, env: Env) {
   const ip = clientIp(req);
   await rateLimit(env, `pair:${ip}`, 10, 3600);
   const body = await req.json<any>().catch(() => ({}));
   const raw = String(body.code ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const name = String(body.name ?? "").trim().replace(/[^\w .-]/g, "").slice(0, 40);
-  if (raw.length !== 8 || !name) throw new HttpError(400, "Pairing code and device name are required");
+  if ((raw.length !== 8 && raw.length !== 12) || !name) throw new HttpError(400, "Pairing code and device name are required");
   const hash = await sha256Hex(raw);
-  // Atomically consume the code.
-  const code = await env.DB.prepare(
-    "UPDATE pairing_codes SET used = 1 WHERE code_hash = ? AND used = 0 AND expires_at > ? RETURNING user_id"
+  // One-time codes (8 chars) are atomically consumed. Reusable enrollment codes (12 chars) are not
+  // marked used, so the same baked-in code can bring up every PC it is installed on.
+  let userId: string | null = null;
+  const consumed = await env.DB.prepare(
+    "UPDATE pairing_codes SET used = 1 WHERE code_hash = ? AND used = 0 AND reusable = 0 AND expires_at > ? RETURNING user_id"
   ).bind(hash, now()).first<{ user_id: string }>();
-  if (!code) throw new HttpError(403, "Pairing code is invalid, expired or already used");
+  if (consumed) userId = consumed.user_id;
+  else {
+    const reusable = await env.DB.prepare(
+      "SELECT user_id FROM pairing_codes WHERE code_hash = ? AND reusable = 1 AND expires_at > ?"
+    ).bind(hash, now()).first<{ user_id: string }>();
+    if (reusable) userId = reusable.user_id;
+  }
+  if (!userId) throw new HttpError(403, "Pairing code is invalid, expired or already used");
+  const code = { user_id: userId };
 
   const secret = b64url(randomBytes(32));
   const id = randomId("d_");

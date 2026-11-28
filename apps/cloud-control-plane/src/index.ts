@@ -1,5 +1,5 @@
 import { DEFAULT_PERMISSIONS, isTerminal } from "../../../packages/shared-types/src/index";
-import { agentCommand, createPairingCode, pairDevice, sync, taskUpdate, unpairSelf } from "./agent";
+import { agentCommand, createEnrollmentCode, createPairingCode, pairDevice, sync, taskUpdate, unpairSelf } from "./agent";
 import { changePassword, login, logout, register, requireUser, updateSettings, type AuthedUser } from "./auth";
 import { cronMatches, isValidTimeZone, parseCron, zonedParts } from "./cron";
 import { audit, clientIp, HttpError, json, now, randomId, readJson, safeParse, type Env } from "./lib";
@@ -54,7 +54,7 @@ function serveStatic(pathname: string): Response {
 }
 
 const CONTROL_ACTIONS = new Set(["memory.list", "memory.add", "memory.delete", "apps.list", "apps.refresh", "files.search",
-  "files.list", "files.read", "files.delete", "files.fetch", "files.put", "message.show", "terminal.exec",
+  "files.list", "files.index", "files.read", "files.delete", "files.fetch", "files.put", "message.show", "terminal.exec",
   "power.shutdown", "power.restart", "power.sleep", "power.lock", "power.cancel", "screen.capture", "system.info"]);
 
 function corsHeaders(req: Request, env: Env): Record<string, string> {
@@ -108,6 +108,7 @@ route("PATCH", "/api/settings", authed(async (req, env, u) => updateSettings(req
 // ---------- devices ----------
 route("GET", "/api/devices", authed(async (_r, env, u) => ({ devices: await listDevices(env, u.id) })));
 route("POST", "/api/devices/pairing-code", authed(async (req, env, u) => createPairingCode(env, u.id, clientIp(req))));
+route("POST", "/api/devices/enrollment-code", authed(async (req, env, u) => createEnrollmentCode(env, u.id, clientIp(req), Number((await req.json<any>().catch(() => ({}))).days) || 30)));
 route("PATCH", "/api/devices/:id", authed(async (req, env, u, p) => {
   const row = await env.DB.prepare("SELECT * FROM devices WHERE id = ? AND user_id = ? AND revoked = 0").bind(p.id, u.id).first<any>();
   if (!row) throw new HttpError(404, "Device not found");

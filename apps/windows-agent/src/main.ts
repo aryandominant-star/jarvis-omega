@@ -123,8 +123,9 @@ async function main() {
       const sub = argv[1];
       const launcher = path.join(path.dirname(process.execPath), "jarvisw.exe");
       const exe = fs.existsSync(launcher) ? launcher : process.execPath;
-      if (sub === "register") { await registerStartup(exe, `"${path.join(paths.appDir, "agent.cjs")}" --background`); return out("registered"); }
-      if (sub === "enable" || sub === "disable") { await setStartupEnabled(sub === "enable"); return out(sub + "d"); }
+      const startupArgs = `"${path.join(paths.appDir, "agent.cjs")}" --background`;
+      if (sub === "register") { await registerStartup(exe, startupArgs); return out("registered"); }
+      if (sub === "enable" || sub === "disable") { await setStartupEnabled(sub === "enable", exe, startupArgs); return out(sub + "d"); }
       if (sub === "remove") { await unregisterStartup(); return out("removed"); }
       return out(await startupStatus());
     }

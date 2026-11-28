@@ -6,7 +6,7 @@ import fs from "node:fs";
 import readline from "node:readline";
 
 export type VoiceEvent =
-  | { type: "ready"; recognizer: string; voice: string }
+  | { type: "ready"; recognizer: string; voice: string; engine?: string }
   | { type: "wake" } | { type: "timeout" } | { type: "stop" } | { type: "speaking" } | { type: "spoken" }
   | { type: "command"; text: string; confidence: number }
   | { type: "level"; value: number }
@@ -17,8 +17,13 @@ export class VoiceEngine extends EventEmitter {
   private restarts = 0;
   private wanted = false;
 
-  constructor(private scriptPath: string, private log: (m: string) => void) {
+  constructor(private scriptPath: string, private log: (m: string) => void, private voiceName?: string) {
     super();
+  }
+
+  /** Choose a preferred TTS voice by (partial) name; applied on the next (re)start. */
+  setVoice(name: string | null) {
+    this.voiceName = name || undefined;
   }
 
   static supported() {
@@ -30,7 +35,9 @@ export class VoiceEngine extends EventEmitter {
     if (!fs.existsSync(this.scriptPath)) throw new Error(`Voice script missing: ${this.scriptPath}`);
     this.wanted = true;
     if (this.proc) return;
-    this.proc = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", this.scriptPath], {
+    const psArgs = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", this.scriptPath];
+    if (this.voiceName) psArgs.push(this.voiceName);
+    this.proc = spawn("powershell.exe", psArgs, {
       windowsHide: true, stdio: ["pipe", "pipe", "pipe"],
     });
     const rl = readline.createInterface({ input: this.proc.stdout! });

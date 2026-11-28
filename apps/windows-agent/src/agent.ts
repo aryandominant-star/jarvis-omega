@@ -9,7 +9,7 @@ import { buildTaskPrompt, codexLogin, codexLoginStatus, PERSONA, resolveCodexBin
 import { BrowserManager } from "../../../packages/browser-controller/src/index";
 import { Vault } from "../../../packages/credential-vault/src/index";
 import { CloudClient, CloudError } from "../../../packages/device-manager/src/index";
-import { countEntries, deletePath, listDir, readFileBase64, readTextFile, searchFiles, writeFileBase64 } from "../../../packages/file-manager/src/index";
+import { buildFileIndex, countEntries, deletePath, listDir, readFileBase64, readTextFile, searchFiles, writeFileBase64 } from "../../../packages/file-manager/src/index";
 import { Memory } from "../../../packages/memory/src/index";
 import { effectivePermissions, isAppAllowed, isPathAllowed, type EffectivePermissions, type LocalPolicy } from "../../../packages/permissions/src/index";
 import { REA_INSTRUCTIONS, reaMcpServer } from "../../../packages/rea-integration/src/index";
@@ -18,7 +18,7 @@ import { spokenSummary, VoiceEngine } from "../../../packages/voice-engine/src/i
 import { exportReport } from "../../../packages/web-research/src/index";
 import {
   batteryStatus, cancelPower, captureScreen, collectMetrics, discoverApps, focusWindow, isWorkstationLocked, killTree,
-  launchApp, listWindows, logonKey, powerAction, screenIndicator, setStartupEnabled, showMessage, startupStatus, toast, userNotificationState,
+  launchApp, listWindows, logonKey, powerAction, registerRunKey, screenIndicator, setStartupEnabled, showMessage, startupStatus, toast, userNotificationState,
 } from "../../../packages/windows-automation/src/index";
 import { runTerminal } from "./core/terminal";
 import { runClaude } from "../../../packages/agent-brain/src/claude";
@@ -85,7 +85,15 @@ export class Agent {
     this.localUiUrl = await startLocalUi(this).catch((e) => { log.error("local UI failed", e); return null; });
     await this.tray.start().catch((e) => log.error("tray failed", e));
     this.tray.setPaired(!!this.cfg.deviceId);
-    this.tray.setStartup((await startupStatus()) === "enabled");
+    const startup = await startupStatus();
+    this.tray.setStartup(startup === "enabled");
+    // Self-heal: if autostart was ever enabled, re-assert the HKCU Run entry to THIS install's paths
+    // on every boot, so an app move/update or a cleared key can't quietly disable sign-in startup.
+    if (startup === "enabled" && IS_WIN) {
+      const launcher = path.join(path.dirname(process.execPath), "jarvisw.exe");
+      const exe = fs.existsSync(launcher) ? launcher : process.execPath;
+      registerRunKey(exe, `"${path.join(paths.appDir, "agent.cjs")}" --background`).catch(() => undefined);
+    }
     this.applyPermissions();
     this.recoverInterruptedTasks();
     this.refreshLocalState().catch(() => undefined);
@@ -391,6 +399,7 @@ export class Agent {
     else if (act === "apps.refresh") { await this.refreshApps(); out = { count: this.memory.apps().length }; }
     else if (act === "files.search") out = searchFiles(String(a.query ?? ""), this.perms.approvedDirs);
     else if (act === "files.list") out = this.controlListDir(String(a.path ?? this.perms.workspaceDir));
+    else if (act === "files.index") out = this.controlIndex();
     else if (act === "files.read") out = this.controlRead(String(a.path ?? ""));
     else if (act === "files.fetch") out = this.controlFetch(String(a.path ?? ""));
     else if (act === "files.put") out = this.controlPut(String(a.dir ?? this.perms.workspaceDir), String(a.name ?? "upload.bin"), String(a.base64 ?? ""));
@@ -409,6 +418,18 @@ export class Agent {
     const dir = path.resolve(p);
     if (!isPathAllowed(dir, this.perms)) throw new Error("That folder is outside the approved directories");
     return { path: dir, entries: listDir(dir) };
+  }
+  private controlIndex() {
+    const idx = buildFileIndex(this.perms.approvedDirs);
+    // Learn from it: store a compact summary so the brain knows what's on this machine, replacing the
+    // previous scan so memory doesn't grow without bound.
+    try {
+      for (const m of this.memory.list("device")) if (/^Workspace scan:/.test(m.content)) this.memory.delete(m.id);
+      this.memory.add("device", idx.summary);
+      const folders = idx.roots.flatMap((r) => (r.children ?? []).filter((c) => c.type === "dir").map((c) => c.name)).slice(0, 25);
+      if (folders.length) this.memory.add("device", `Top-level folders in the workspace: ${folders.join(", ")}.`);
+    } catch { /* memory is best-effort */ }
+    return idx;
   }
   private controlRead(p: string) {
     const f = path.resolve(p);

@@ -101,13 +101,20 @@ export function Universe() {
       finally { setArming(false); devicesQ.reload(); }
       return;
     }
-    const ok = confirm(
-      "ARM SERIOUS MODE\n\n" +
-      "Every paired computer will carry out your orders without stopping to ask — researching, browsing, opening apps, running tasks.\n\n" +
-      "Still protected: truly irreversible actions (shutdown, disk wipe, payments, disabling security) always ask first, and Emergency Stop always works.\n\n" +
-      "Arm now?"
-    );
-    if (!ok) return;
+    // Explain it once, the first time ever on this browser. After that, arming is a single click —
+    // no declaration to accept every time.
+    let acked = false;
+    try { acked = localStorage.getItem("jarvis.seriousAck") === "1"; } catch { /* storage blocked */ }
+    if (!acked) {
+      const ok = confirm(
+        "ARM SERIOUS MODE\n\n" +
+        "Every paired computer will carry out your orders without stopping to ask — researching, browsing, opening apps, running tasks.\n\n" +
+        "Still protected: truly irreversible actions (shutdown, disk wipe, payments, disabling security) always ask first, and Emergency Stop always works.\n\n" +
+        "You won't be asked this again. Arm now?"
+      );
+      if (!ok) return;
+      try { localStorage.setItem("jarvis.seriousAck", "1"); } catch { /* ignore */ }
+    }
     setArming(true);
     try {
       for (const d of devices) {

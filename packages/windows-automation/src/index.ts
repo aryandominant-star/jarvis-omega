@@ -192,35 +192,89 @@ function schtasks(args: string[]): Promise<string> {
   );
 }
 
+// The HKCU "Run" key is the single most reliable per-user autostart on Windows: it needs no admin
+// rights, has no conditions (network/battery/idle) that can silently suppress it, and fires on every
+// interactive sign-in. We register it ALONGSIDE the scheduled task (which additionally covers unlock
+// and resume-from-sleep) so the agent comes up even if Task Scheduler declines the task for any reason.
+const RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+const RUN_VALUE = "J.A.R.V.I.S. OMEGA";
+
+function reg(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) =>
+    execFile("reg.exe", args, { windowsHide: true, timeout: 20_000 }, (err, stdout, stderr) =>
+      err ? reject(new Error((stderr || stdout || err.message).trim())) : resolve(stdout)
+    )
+  );
+}
+
+/** Add the HKCU\...\Run entry that launches the agent at sign-in. Idempotent (overwrites). */
+export async function registerRunKey(exe: string, args: string): Promise<void> {
+  if (!IS_WIN) return;
+  await reg(["add", RUN_KEY, "/v", RUN_VALUE, "/t", "REG_SZ", "/d", `"${exe}" ${args}`, "/f"]);
+}
+
+export async function unregisterRunKey(): Promise<void> {
+  if (!IS_WIN) return;
+  await reg(["delete", RUN_KEY, "/v", RUN_VALUE, "/f"]).catch(() => undefined);
+}
+
+export async function runKeyPresent(): Promise<boolean> {
+  if (!IS_WIN) return false;
+  try {
+    const out = await reg(["query", RUN_KEY, "/v", RUN_VALUE]);
+    return /jarvisw?\.exe|agent\.cjs/i.test(out);
+  } catch {
+    return false;
+  }
+}
+
 export async function registerStartup(exe: string, args: string): Promise<void> {
   if (!IS_WIN) throw new Error("Startup registration is only supported on Windows");
+  // Primary, condition-free mechanism — must not be swallowed if the scheduled task fails.
+  await registerRunKey(exe, args).catch(() => undefined);
   const userId = `${process.env.USERDOMAIN ?? os.hostname()}\\${os.userInfo().username}`;
   const tmp = path.join(os.tmpdir(), `jarvis-task-${process.pid}.xml`);
   fs.writeFileSync(tmp, "﻿" + startupTaskXml(exe, args, userId), "utf16le");
   try {
     await schtasks(["/Create", "/TN", STARTUP_TASK, "/XML", tmp, "/F"]);
+  } catch (e) {
+    // The Run key alone still provides sign-in autostart; don't fail the whole registration.
+    if (!(await runKeyPresent())) throw e;
   } finally {
     fs.rmSync(tmp, { force: true });
   }
 }
 
-export async function setStartupEnabled(enabled: boolean): Promise<void> {
+export async function setStartupEnabled(enabled: boolean, exe?: string, args?: string): Promise<void> {
   if (!IS_WIN) return;
-  await schtasks(["/Change", "/TN", STARTUP_TASK, enabled ? "/ENABLE" : "/DISABLE"]);
+  if (enabled) {
+    if (exe && args) await registerRunKey(exe, args).catch(() => undefined);
+    await schtasks(["/Change", "/TN", STARTUP_TASK, "/ENABLE"]).catch(() => undefined);
+  } else {
+    await unregisterRunKey();
+    await schtasks(["/Change", "/TN", STARTUP_TASK, "/DISABLE"]).catch(() => undefined);
+  }
 }
 
 export async function startupStatus(): Promise<"enabled" | "disabled" | "missing"> {
   if (!IS_WIN) return "missing";
+  const run = await runKeyPresent();
+  let task: "enabled" | "disabled" | "missing" = "missing";
   try {
     const out = await schtasks(["/Query", "/TN", STARTUP_TASK, "/FO", "CSV", "/NH"]);
-    return /Disabled/i.test(out) ? "disabled" : "enabled";
+    task = /Disabled/i.test(out) ? "disabled" : "enabled";
   } catch {
-    return "missing";
+    task = "missing";
   }
+  // Enabled if either mechanism is active; missing only when both are gone.
+  if (run || task === "enabled") return "enabled";
+  if (task === "disabled") return "disabled";
+  return "missing";
 }
 
 export async function unregisterStartup(): Promise<void> {
   if (!IS_WIN) return;
+  await unregisterRunKey();
   await schtasks(["/Delete", "/TN", STARTUP_TASK, "/F"]).catch(() => undefined);
 }
 

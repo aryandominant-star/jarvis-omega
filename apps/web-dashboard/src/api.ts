@@ -59,6 +59,7 @@ export const Api = {
   updateSettings: (s: Partial<UserSettings>) => api<{ settings: UserSettings }>("/api/settings", { method: "PATCH", body: s }),
   devices: () => api<{ devices: Device[] }>("/api/devices"),
   pairingCode: () => api<{ code: string; expiresAt: number }>("/api/devices/pairing-code", { method: "POST" }),
+  enrollmentCode: (days = 30) => api<{ code: string; expiresAt: number; reusable: boolean }>("/api/devices/enrollment-code", { method: "POST", body: { days } }),
   updateDevice: (id: string, patch: any) => api<{ devices: Device[] }>(`/api/devices/${id}`, { method: "PATCH", body: patch }),
   revokeDevice: (id: string) => api(`/api/devices/${id}`, { method: "DELETE" }),
   tasks: (q = "") => api<{ tasks: Task[]; automationPaused: boolean }>(`/api/tasks${q}`),

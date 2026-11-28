@@ -9,6 +9,11 @@
 #ifndef DefaultApiUrl
   #define DefaultApiUrl ""
 #endif
+#ifndef DefaultPairCode
+  ; Bake a reusable enrollment code here (Devices → "Create enrollment code") to ship a pre-configured
+  ; installer that pairs and starts itself with nothing for the user to type.
+  #define DefaultPairCode ""
+#endif
 #ifndef Stage
   #define Stage "..\..\dist\win"
 #endif
@@ -109,6 +114,7 @@ begin
   PairPage.Add('Pairing code (e.g. ABCD-EFGH):', False);
   PairPage.Add('Name for this PC:', False);
   PairPage.Values[0] := '{#DefaultApiUrl}';
+  PairPage.Values[1] := '{#DefaultPairCode}';
   PairPage.Values[2] := Uppercase(GetComputerNameString());
 
   WorkspacePage := CreateInputDirPage(PairPage.ID, 'Workspace',

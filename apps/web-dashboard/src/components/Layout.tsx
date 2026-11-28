@@ -39,7 +39,7 @@ export function Layout({ title, children, right }: { title: string; children: Re
             <div className="brand-mark" />
             <div>
               <div className="brand-name">J.A.R.V.I.S.</div>
-              <div className="brand-sub">OMEGA · v1.0</div>
+              <div className="brand-sub">OMEGA · v1.1</div>
             </div>
           </div>
           <nav className="nav">

@@ -39,6 +39,7 @@ export type ControlAction =
   | "apps.refresh"
   | "files.search"
   | "files.list"
+  | "files.index"       // walk approved roots into a tree + learn a summary of what's on the machine
   | "files.read"
   | "files.delete"
   | "files.fetch"       // stage a file's bytes back to the dashboard (download)

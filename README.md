@@ -27,15 +27,25 @@ Browser (any device)                Cloudflare (free tier)                     E
 ## Use it
 
 1. Open the command center and **create an account** (username + password). Nothing is visible without signing in.
-2. **Devices → Generate pairing code.**
+2. **Devices → one-time pairing code** (expires in 10 min, pairs one PC), or **Create enrollment code** — a reusable
+   code good for 30 days that you can bake into a pre-configured installer so a PC pairs itself on first run.
 3. On each PC, run **JARVIS-Setup.exe**. The wizard goes Welcome → Permissions → **Pairing** (enter the code) → Workspace
-   → Browser → Voice → Cloud check → Startup → Initialization. No admin rights are needed.
+   → Browser → Voice → Cloud check → Startup → Initialization. No admin rights are needed. Startup is registered two
+   ways — an HKCU *Run* entry (fires on every sign-in) and a scheduled task (also covers unlock and resume from sleep) —
+   so the agent reliably comes up after the machine is switched on, and self-heals the entry on each boot.
 4. On the last page keep **“Connect Codex now”** ticked and sign in with ChatGPT. You can also do this later from the
    tray menu → *Connect Codex*.
 5. In the tray menu → **Credential Vault…**, add logins for sites JARVIS should sign in to. They're stored with DPAPI
    on that PC and are never sent to the cloud or shown to the AI.
-6. Give orders: *“Jarvis, check my other PC, research the newest developments in AI, prepare a report and save it to
+6. Open a device's **Control** panel. The moment it connects, JARVIS fetches the file directory into a browsable tree
+   and learns a summary of what's on the machine (stored in its local memory, so later orders know your folders). From
+   here you can message the screen, run terminal commands, view the screen, control power and download/delete files.
+7. Give orders: *“Jarvis, check my other PC, research the newest developments in AI, prepare a report and save it to
    my documents.”*
+
+For a pre-built, download-and-run installer, set a repository **Actions variable** `PAIR_CODE` to a reusable enrollment
+code; the published `JARVIS-Setup.exe` then pairs and starts itself with nothing to type. JARVIS speaks with a modern,
+natural Windows voice (a refined British male by default) and falls back to the classic voice only if none is installed.
 
 ## What is in the box
 
